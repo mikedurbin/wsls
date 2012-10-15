@@ -8,10 +8,21 @@ import java.util.Map;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 
+/**
+ * A class that simply maps column labels (repeatable) to the
+ * index of the column that had that label.
+ */
 public class ColumnMapping {
 
     private Map<String, List<Integer>> mapping;
     
+    /**
+     * Initializes this ColumnMapping using the supplied 
+     * row (which is assumed to be the header row of 
+     * labels).
+     * @param row the header row of the spreadsheet where
+     * the labels are entered.
+     */
     public ColumnMapping(Row row) {
         mapping = new HashMap<String, List<Integer>>();
         for (Cell cell : row) {

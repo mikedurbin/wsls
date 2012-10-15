@@ -5,7 +5,7 @@ import java.util.List;
 
 import org.apache.poi.ss.usermodel.Row;
 
-public class ColumnNameBasedPBCoreRow extends PBCoreRow {
+public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
 
     private ColumnMapping m;
     
@@ -30,8 +30,15 @@ public class ColumnNameBasedPBCoreRow extends PBCoreRow {
         return getString(m.getColumnForLabel("pbcoreDescription type=Abstract"));
     }
     
-    public String getPlace() {
-        return getString(m.getColumnForLabel("pbcoreSubject type=Place source=LCSH"));
+    public List<String> getPlaces() {
+        List<String> places = new ArrayList<String>();
+        for (int i : m.getColumnsForLabel("pbcoreSubject type=Place source=LCSH")) {
+            String place = getString(i);
+            if (place != null) {
+                places.add(place);
+            }
+        }
+        return places;
     }
     
     public List<String> getTopics() {
@@ -65,5 +72,21 @@ public class ColumnNameBasedPBCoreRow extends PBCoreRow {
             }
         }
         return entities;
+    }
+
+    public String getInstantiationLocation() {
+        return getString(m.getColumnForLabel("instantiationLocation"));
+    }
+
+    public String getInstantiationDuration() {
+        return getString(m.getColumnForLabel("instantiationDuration"));
+    }
+
+    public String getInstantiationColors() {
+        return getString(m.getColumnForLabel("instantiationColors"));
+    }
+
+    public String getInstantiationAnnotation() {
+        return getString(m.getColumnForLabel("instantiationAnnotation"));
     }  
 }

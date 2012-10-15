@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<foxml:digitalObject VERSION="1.1" PID="uva-lib:pbcore2CModel"
+<foxml:digitalObject VERSION="1.1" PID="uva-lib:wslsScriptCModel"
     xmlns:foxml="info:fedora/fedora-system:def/foxml#"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="info:fedora/fedora-system:def/foxml# http://www.fedora.info/definitions/1/0/foxml1-1.xsd">
     <foxml:objectProperties>
         <foxml:property NAME="info:fedora/fedora-system:def/model#state" VALUE="A"/>
-        <foxml:property NAME="info:fedora/fedora-system:def/model#label" VALUE="PBCore 2.0 content model"/>
+        <foxml:property NAME="info:fedora/fedora-system:def/model#label" VALUE="AP Trust participant content model"/>
     </foxml:objectProperties>
     <foxml:datastream ID="DC" STATE="A" CONTROL_GROUP="X" VERSIONABLE="true">
         <foxml:datastreamVersion ID="DC1.0" LABEL="Dublin Core Record for this object" MIMETYPE="text/xml" FORMAT_URI="http://www.openarchives.org/OAI/2.0/oai_dc/">
             <foxml:xmlContent>
                 <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
-                    <dc:title>Content Model for objects that contain metadata that conforms to the PBCore version 2.0 schema.</dc:title>
-                    <dc:identifier>uva-lib:pbcore2CModel</dc:identifier>
+                    <dc:title>Content Model for objects that represent a single anchor script.</dc:title>
+                    <dc:identifier>uva-lib:wslsScriptCModel</dc:identifier>
                 </oai_dc:dc>
             </foxml:xmlContent>
         </foxml:datastreamVersion>
@@ -21,9 +21,8 @@
         <foxml:datastreamVersion ID="RELS-EXT.0" FORMAT_URI="info:fedora/fedora-system:FedoraRELSExt-1.0" MIMETYPE="application/rdf+xml">
             <foxml:xmlContent>
                 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-                    <rdf:Description rdf:about="info:fedora/uva-lib:pbcore2CModel">
+                    <rdf:Description rdf:about="info:fedora/uva-lib:wslsScriptCModel">
                         <hasModel xmlns="info:fedora/fedora-system:def/model#" rdf:resource="info:fedora/fedora-system:ContentModel-3.0"></hasModel>
-                        <hasService xmlns="info:fedora/fedora-system:def/model#" rdf:resource="info:fedora/uva-lib:indexableSDef"/>
                     </rdf:Description>
                 </rdf:RDF>
             </foxml:xmlContent>
@@ -33,19 +32,39 @@
         <foxml:datastreamVersion ID="DS-COMPOSITE-MODEL1.0" LABEL="Datastream Composite Model" MIMETYPE="text/xml" FORMAT_URI="info:fedora/fedora-system:FedoraDSCompositeModel-1.0">
             <foxml:xmlContent>
                 <dsCompositeModel xmlns="info:fedora/fedora-system:def/dsCompositeModel#">
-                    <dsTypeModel ID="metadata">
-                        <form MIME="text/xml" />
-                        <extension name="SCHEMA">
-                          <reference type="datastream" value="pbcore-2.0.xsd" />
-                        </extension>
+                    <dsTypeModel ID="scriptPDF">
+                        <form MIME="application/pdf" />
+                    </dsTypeModel>
+                    <dsTypeModel ID="scriptTXT">
+                        <form MIME="text/plain" />
+                    </dsTypeModel>
+                    <dsTypeModel ID="scriptThumbnailPNG">
+                        <form MIME="image/png" />
                     </dsTypeModel>
                 </dsCompositeModel>
             </foxml:xmlContent>
         </foxml:datastreamVersion>
     </foxml:datastream>
-    <foxml:datastream ID="pbcore-2.0.xsd" STATE="A" CONTROL_GROUP="M" VERSIONABLE="true">
-        <foxml:datastreamVersion ID="pbcore-2.0.xsd1.0" LABEL="PBCore 2.0 schema" MIMETYPE="text/xml">
-            <foxml:contentLocation TYPE="URL" REF="http://www.pbcore.org/xsd/pbcore-2.0.xsd"/>
+    <foxml:datastream ID="ONTOLOGY" STATE="A" CONTROL_GROUP="X" VERSIONABLE="true">
+        <foxml:datastreamVersion ID="ONTOLOGY1.0" MIMETYPE="application/rdf+xml" FORMAT_URI="info:fedora/fedora-system:FedoraOntology-1.0">
+            <foxml:xmlContent>
+                <rdf:RDF xmlns:fedora-model="info:fedora/fedora-system:def/model#"
+                    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+                    xmlns:owl="http://www.w3.org/2002/07/owl#">
+                    <owl:Class rdf:about="info:fedora/uva-lib:wslsScriptCModel#class">
+                        <!--  The object must point to exactly one video clip -->
+                        <rdfs:subClassOf>
+                            <owl:Restriction>
+                                <owl:onProperty rdf:resource="http://fedora.lib.virginia.edu/wsls/relationships#isAnchorScriptFor"/>
+                                <owl:cardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">1</owl:cardinality>
+                            </owl:Restriction>
+                        </rdfs:subClassOf>
+                    </owl:Class>
+                    <owl:Class rdf:about="info:fedora/fedora-system:ContentModel-3.0#datastreams/RELS-EXT/class"/>
+                    <owl:ObjectProperty rdf:about="http://fedora.lib.virginia.edu/wsls/relationships#isAnchorScriptFor"/>
+                </rdf:RDF>
+            </foxml:xmlContent>
         </foxml:datastreamVersion>
     </foxml:datastream>
 </foxml:digitalObject>
