@@ -20,14 +20,14 @@ this program, no configuration change is necessary.  On other platforms
 in the file src/main/resources/conf/image-magick.properties the path should
 be specified.
 
-mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.fedora.BatchIngest -Dexec.args="spreadsheet.xlsx texts pdfs"
+	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.fedora.BatchIngest -Dexec.args="spreadsheet.xlsx texts pdfs"
 
 ## PostSolrDocument.java
 A simple program that indexes everything in the configured fedora 
 repository that has the "uva-lib:pbcore2CModel" content model to the
 SOLR server configured in src/main/resources/conf/solr.properties.
 
-mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.solr.PostSolrDocument
+	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.solr.PostSolrDocument
 
 ## foxml files
 * __uva-lib:documentedMappingCModel__: a content model for objects 
