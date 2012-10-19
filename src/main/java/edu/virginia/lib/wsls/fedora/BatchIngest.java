@@ -10,6 +10,8 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 
 import javax.xml.parsers.ParserConfigurationException;
@@ -64,8 +66,8 @@ public class BatchIngest {
     private File spreadsheet;
     
     public static void main(String [] args) throws Exception {
-        if (args.length != 3) {
-            System.err.println("Usage: BatchIngest [spreadsheet] [txtDir] [pdfDir]");
+        if (args.length != 3 || args.length != 4) {
+            System.err.println("Usage: BatchIngest [spreadsheet] [txtDir] [pdfDir] --replace");
             return;
         }
         File spreadsheet = new File(args[0]);
@@ -78,7 +80,7 @@ public class BatchIngest {
         p.load(BatchIngest.class.getClassLoader().getResourceAsStream("conf/fedora.properties"));
         FedoraClient fc = new FedoraClient(new FedoraCredentials(p.getProperty("fedora-url"), p.getProperty("fedora-username"), p.getProperty("fedora-password")));
 
-        b.ingest(fc);
+        b.ingest(fc, (args.length == 4 && "--replace".equals(args[3])));
         
     }
     
@@ -89,14 +91,14 @@ public class BatchIngest {
     }
     
     public void validateSourceMaterials() throws Exception {
-        process(null);
+        process(null, false);
     }
     
-    public void ingest(FedoraClient fc) throws Exception {
-        process(fc);
+    public void ingest(FedoraClient fc, boolean replace) throws Exception {
+        process(fc, replace);
     }
     
-    private void process(FedoraClient fc) throws FactoryConfigurationError, Exception {
+    private void process(FedoraClient fc, boolean replace) throws FactoryConfigurationError, Exception {
         Workbook wb = null;
         try {
             wb = new HSSFWorkbook(new FileInputStream(spreadsheet));
@@ -113,7 +115,7 @@ public class BatchIngest {
             PBCoreDocument pbcore = new PBCoreDocument(row);
             System.out.println(row.getId() + " parsed");
             File pdf = new File(scriptPdfDir, row.getId() + ".pdf");
-            File text = new File(scriptTextDir, row.getId().substring(0, 4) + ".txt");
+            File text = new File(scriptTextDir, row.getId() + ".txt");
             if (!pdf.exists() || !text.exists()) {
                 if (!pdf.exists()) {
                     System.err.println("Missing pdf file: " + pdf.getPath());
@@ -123,25 +125,29 @@ public class BatchIngest {
                 }
             } else if (fc != null) {
                 // ingest the objects
-                //for (String pid : PostSolrDocument.getSubjectsWithLiteral(fc, "dc:identifier", pbcore.getId())) {
-                //    FedoraClient.purgeObject(pid).execute(fc);
-                //    System.out.println("Purging " + pid);
-                //}
-                if (getSubjectsWithLiteral(fc, "dc:identifier", pbcore.getId()).isEmpty()) {
+                List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", pbcore.getId());
+                Collections.sort(oldPids);
+                if (replace) {
+                    for (String pid : oldPids) {
+                        FedoraClient.purgeObject(pid).execute(fc);
+                        System.out.println("Purging " + pid);
+                    }
+                }
+                if (replace || oldPids.isEmpty()) {
                     File thumbnailFile = File.createTempFile("thumbnail-", ".png");
                     thumbnailFile.deleteOnExit();
                     t.generateThubmnail(pdf, thumbnailFile);
                     
                     File mainFoxml = File.createTempFile("main-object-", "-foxml.xml");
                     mainFoxml.deleteOnExit();
-                    String mainPid = FedoraClient.getNextPID().execute(fc).getPid();
+                    String mainPid = oldPids.isEmpty() ? FedoraClient.getNextPID().execute(fc).getPid() : oldPids.get(0);
                     writeOutPBCoreFoxml(mainPid, pbcore, new FileOutputStream(mainFoxml));
                     mainPid = FedoraClient.ingest(mainPid).content(mainFoxml).execute(fc).getPid();
                     System.out.println("Ingested " + mainPid);
                     
                     File scriptFoxml = File.createTempFile("script-object", "-foxml.xml");
                     scriptFoxml.deleteOnExit();
-                    String scriptPid = FedoraClient.getNextPID().execute(fc).getPid();
+                    String scriptPid = oldPids.size() != 2 ? FedoraClient.getNextPID().execute(fc).getPid() : oldPids.get(1);
                     writeOutScriptFoxml(scriptPid, new FileOutputStream(scriptFoxml), pdf, text, mainPid, pbcore.getId());
                     scriptPid = FedoraClient.ingest(scriptPid).content(scriptFoxml).execute(fc).getPid();
                     System.out.println("Ingested " + scriptPid + " (script)");
@@ -154,7 +160,6 @@ public class BatchIngest {
                 } else {
                     System.out.println("Skipping ingest of " + pbcore.getId() + " because it's already in the repository.");
                 }
-                break;
             }
         }
     }

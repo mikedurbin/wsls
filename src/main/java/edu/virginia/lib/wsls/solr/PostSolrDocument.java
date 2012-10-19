@@ -36,6 +36,7 @@ public class PostSolrDocument {
             try {
                 indexPid(fc, pid, p.getProperty("solr.update"), "uva-lib:indexableSDef", "getIndexingMetadata");
             } catch (Throwable t) {
+                t.printStackTrace();
                 System.out.println("Unable to index " + pid);
             }
         }
