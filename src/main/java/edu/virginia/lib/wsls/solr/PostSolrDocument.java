@@ -13,7 +13,9 @@ import java.nio.channels.WritableByteChannel;
 import java.util.Properties;
 
 import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
 import org.apache.commons.httpclient.HttpStatus;
+import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.httpclient.methods.multipart.ByteArrayPartSource;
 import org.apache.commons.httpclient.methods.multipart.FilePart;
@@ -40,6 +42,7 @@ public class PostSolrDocument {
                 System.out.println("Unable to index " + pid);
             }
         }
+        commit(p.getProperty("solr.update"));
     }
     
     public static void indexPid(FedoraClient fc, String pid, String updateUrl, String servicePid, String serviceMethod) throws Exception {
@@ -67,6 +70,36 @@ public class PostSolrDocument {
             post.releaseConnection();
         }
         
+    }
+    
+    public static void commit(String updateUrl) throws HttpException, IOException {
+        String url = updateUrl + "?stream.body=%3Ccommit/%3E";
+        GetMethod get = new GetMethod(url);
+        try {
+            HttpClient client = new HttpClient();
+            client.executeMethod(get);
+            int status = get.getStatusCode();
+            if (status != HttpStatus.SC_OK) {
+                throw new RuntimeException("REST action \"" + url + "\" failed: " + get.getStatusLine());
+            }
+        } finally {
+            get.releaseConnection();
+        }
+    }
+    
+    public static void rollback(String updateUrl) throws HttpException, IOException {
+        String url = updateUrl + "?stream.body=%3Crollback/%3E";
+        GetMethod get = new GetMethod(url);
+        try {
+            HttpClient client = new HttpClient();
+            client.executeMethod(get);
+            int status = get.getStatusCode();
+            if (status != HttpStatus.SC_OK) {
+                throw new RuntimeException("REST action \"" + url + "\" failed: " + get.getStatusLine());
+            }
+        } finally {
+            get.releaseConnection();
+        }
     }
     
     public static void writeStreamToStream(InputStream is, OutputStream os) throws IOException {

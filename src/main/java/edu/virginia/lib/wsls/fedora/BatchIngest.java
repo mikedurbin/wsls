@@ -37,10 +37,10 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import com.yourmediashelf.fedora.client.FedoraClient;
 import com.yourmediashelf.fedora.client.FedoraCredentials;
 
+import edu.virginia.lib.wsls.proc.ImageMagickProcess;
 import edu.virginia.lib.wsls.spreadsheet.ColumnMapping;
 import edu.virginia.lib.wsls.spreadsheet.ColumnNameBasedPBCoreRow;
 import edu.virginia.lib.wsls.spreadsheet.PBCoreDocument;
-import edu.virginia.lib.wsls.thumbnails.ImageMagickThumbnailer;
 
 /**
  * Ingests a batch of PBCore records (for video clips) and thier
@@ -106,7 +106,7 @@ public class BatchIngest {
             wb = new XSSFWorkbook(new FileInputStream(spreadsheet));
         }
         
-        ImageMagickThumbnailer t = new ImageMagickThumbnailer();
+        ImageMagickProcess t = new ImageMagickProcess();
         
         Sheet sheet = wb.getSheetAt(0);
         ColumnMapping m = new ColumnMapping(sheet.getRow(0));
