@@ -29,6 +29,17 @@ SOLR server configured in src/main/resources/conf/solr.properties.
 
 	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.solr.PostSolrDocument
 
+## ContentAnalyzer.java
+A program that takes a CSV file containing two columns (the uploaded video file name
+and the system ID it was assigned upon upload) and a directory of PDF files and 
+generates a report attempting to match the files based on the ids it can glean from
+the filenames.
+
+The output is a CSV file sorted by id containing a row for every id for which a script
+or a clip has been matched.
+
+	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.util.ContentAnalyzer -Dexec.args="uploaded.csv pdfs output.csv"
+
 ## foxml files
 * __uva-lib:documentedMappingCModel__: a content model for objects 
   that contain XSLT that converts to SOLR and has documentation about
