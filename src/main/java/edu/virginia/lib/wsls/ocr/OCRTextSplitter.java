@@ -4,44 +4,67 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 
-import edu.virginia.lib.wsls.proc.ImageMagickProcess;
-import edu.virginia.lib.wsls.proc.TesseractProcess;
+import edu.virginia.lib.wsls.ocr.ProcessedDocument.OCRPage;
 
 
 /**
- * A program that takes several PDF files, a single text file that
- * was keyed from the several PDF files when together and breaks the
- * text file into parts that are believed to be associated with the 
- * several PDF files.
+ * A program that takes several PDF files (a combined PDF and a PDF for each
+ * part that was split from it), a single text file that was keyed from the
+ * combined PDF files and breaks the text file into parts that are believed to
+ * be associated with the several PDF files.
  * 
  * There are several assumptions embedded in this code that make the
  * break determination easiser:
  * 1.  The break will occur at a newline character in the hand-keyed
  *     text file
- * 2.  The files for OCR represent the whole document and are *in order*
- * 3.  Each PDF only has one page. (may be false)?!?! 
+ * 2.  The files for OCR represent the whole document
+ * 3.  The images in the split PDF files are sufficiently similar to the 
+ *     corresponding images in the original that they would result in 
+ *     identical OCR output
  */
 public class OCRTextSplitter {
 
+    /**
+     * If one argument is specified, it is assumed to be a directory in which
+     * the PDFs and text file for a single record exist.  Otherwise the 
+     * arguments are expected to be all of the broken up PDFs along with the
+     * unbroken PDF and the text transcription of the unbroken PDF.
+     */
     public static void main(String args[]) throws IOException, InterruptedException {
-        List<File> pdfs = new ArrayList<File>();
+        String[] files = args;
+        if (args.length == 1) {
+            File dir = new File(args[0]);
+            File [] f = dir.listFiles();
+            files = new String[f.length];
+            for (int i = 0; i < f.length; i ++) {
+                files[i] = f[i].getAbsolutePath();
+            }
+        }
+        List<ProcessedDocument> partPdfs = new ArrayList<ProcessedDocument>();
+        ProcessedDocument completePdf = null;
         String text = null;
         File textFile = null;
-        for (String arg : args) {
+        for (String arg : files) {
             if (arg.endsWith(".pdf")) {
                 File pdf = new File(arg);
                 if (!pdf.exists()) {
                     System.err.println("Specified PDF, " + pdf + ", does not exist!");
                     System.exit(-1);
                 }
-                pdfs.add(pdf);
+                if (pdf.getName().contains("_")) {
+                    partPdfs.add(new ProcessedDocument(pdf));
+                } else if (completePdf == null){
+                    completePdf = new ProcessedDocument(pdf);
+                } else {
+                    System.err.println("Cannot determine whether " + pdf + " or " + completePdf.getFilename() + " is the complete PDF.");
+                    System.exit(-1);
+                }
             } else if (arg.endsWith(".txt")) {
                 if (textFile == null) {
                     textFile = new File(arg);
@@ -52,51 +75,85 @@ public class OCRTextSplitter {
                     text = FileUtils.readFileToString(textFile);
                 }
             } else {
-                System.err.println("Arguments must either be PDF files (.pdf) or text files (.txt)!");
+                System.err.println("Arguments must either be PDF files (.pdf) or text files (.txt)! (" + arg + ")");
                 System.exit(-1);
             }
         }
-        Collections.sort(pdfs);
-        
-        ImageMagickProcess convert = new ImageMagickProcess();
-        TesseractProcess tesseract = new TesseractProcess();
-
-        // ORC each image
-        List<String> fuzzyParts = new ArrayList<String>();
-        for (File pdfFile : pdfs) {
-            System.out.println("Balancing image...");
-            File cleantif = File.createTempFile("ocr-ready", ".tif");
-            convert.generateOCRReadyTiff(pdfFile, cleantif);
-            File ocrtext = File.createTempFile("generated-ocr", ".txt");
-            System.out.println("Generating OCR...");
-            // assumption 3: one page PDFs
-            tesseract.generateOCR(cleantif, ocrtext);
-            fuzzyParts.add(FileUtils.readFileToString(ocrtext));
-            cleantif.delete();
-            ocrtext.delete();
+        // determine complete document
+        int partsPages = 0;
+        for (ProcessedDocument d : partPdfs) {
+            partsPages += d.getPageCount();
         }
-        
-        List<String> guessedFragments = new ArrayList<String>();
-        for (int i = 0; i < fuzzyParts.size(); i ++) {
-            if (i == fuzzyParts.size() - 1) {
+        if (partsPages != completePdf.getPageCount()) {
+            System.err.println("There is a different number of pages in the parts (" + partsPages + ") than in \"" + completePdf.getFilename() + "\" (" + completePdf + ")!");
+            System.exit(-1);
+        }
+
+        // determine page order (this algorithm is based on the assumption 
+        // that the OCR of each page will be the same whether it's in the 
+        // combined PDF or the split one.
+        System.out.println("\nDetecting page order:");
+        List<OCRPage> unorderedPages = new ArrayList<OCRPage>();
+        for (ProcessedDocument d : partPdfs) {
+            unorderedPages.addAll(d.getPages());
+        }
+        List<OCRPage> orderedPages = new ArrayList<OCRPage>();
+        String unmatchedText = completePdf.getOCRText();
+        while (!unorderedPages.isEmpty()) {
+            boolean match = false;
+            for (OCRPage p : unorderedPages) {
+                if (unmatchedText.startsWith(p.getOCRText().trim())) {
+                    match = true;
+                    orderedPages.add(p);
+                    unorderedPages.remove(p);
+                    unmatchedText = unmatchedText.substring(p.getOCRText().trim().length()).trim();
+                    System.out.println("  " + p.getDocument().getFilename() + " page " + (p.getPageIndex() + 1) + " is page " + orderedPages.size() + " of " + completePdf.getFilename());
+                    break;
+                } else {
+                }
+            }
+            if (!match) {
+                System.err.println("Unable to determine next match!");
+                System.out.println("Unmatched text: \n" + unmatchedText);
+                for (OCRPage p : unorderedPages) {
+                    System.out.println("\n" + p.getDocument().getFilename() + " page " + p.getPageIndex() + ":\n" + p.getOCRText());
+                }
+                System.exit(-1);
+            }
+        }
+
+        //List<String> guessedFragments = new ArrayList<String>();
+        for (int i = 0; i < orderedPages.size(); i ++) {
+            if (i == orderedPages.size() - 1) {
                 // the remaining part is the match
                 // by default.
-                guessedFragments.add(text);
+                orderedPages.get(i).setKeyedText(text);
+                //guessedFragments.add(text);
             } else {
-                String fuzzyFirst = fuzzyParts.get(i);
-                // assumption 2: all the parts are in order and complete
+                String fuzzyFirst = orderedPages.get(i).getOCRText();
+                // we already ensured that all the pages are in order and complete
                 StringBuffer fuzzyRest = new StringBuffer();
-                for (int j = i + 1; j < fuzzyParts.size(); j ++) {
-                    fuzzyRest.append(fuzzyParts.get(j));
+                for (int j = i + 1; j < orderedPages.size(); j ++) {
+                    fuzzyRest.append(orderedPages.get(j).getOCRText());
                 }
                 String first = matchFirstPartLevenshtein(fuzzyFirst, fuzzyRest.toString(), text);
-                guessedFragments.add(first);
+                orderedPages.get(i).setKeyedText(first);
+                //guessedFragments.add(first);
                 text = text.substring(first.length());
             }
         }
-        System.out.println("Matches: ");
-        for (String frag : guessedFragments) {
-            System.out.println(summarizeString(frag, 40, 80) + "\n");
+        //System.out.println("Matches: ");
+        //for (String frag : guessedFragments) {
+        //    System.out.println(summarizeString(frag, 40, 80) + "\n");
+        //}
+        
+        System.out.println("Computed Matches:");
+        for (ProcessedDocument d : partPdfs) {
+            System.out.println(d.getFilename());
+            for (OCRPage p : d.getPages()) {
+                //System.out.println("  " + summarizeString(p.getKeyedText(), 40, 77));
+                System.out.println("  " + p.getKeyedText());
+            }
         }
     }
     
@@ -166,8 +223,4 @@ public class OCRTextSplitter {
         }
         return sb.toString().replaceAll("\\r|\\n", "");
     }
-    
-    
-    
-    
 }

@@ -40,8 +40,8 @@ public class ImageMagickProcess {
         }
     }
     
-    public void generateOCRReadyTiff(File inputPdf, File outputTif) throws IOException, InterruptedException  {
-        Process p = new ProcessBuilder(convertCommandPath, "-colorspace", "gray", "-density", "300", "-sigmoidal-contrast", "3,0%", inputPdf.getPath() + "[0]", outputTif.getPath()).start();
+    public void generateOCRReadyTiff(File inputPdf, File outputTif, int pageOffset) throws IOException, InterruptedException  {
+        Process p = new ProcessBuilder(convertCommandPath, "-colorspace", "gray", "-density", "300", "-sigmoidal-contrast", "3,0%", inputPdf.getPath() + "[" + pageOffset + "]", outputTif.getPath()).start();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         new Thread(new OutputDrainerThread(p.getInputStream(), baos)).start();
         new Thread(new OutputDrainerThread(p.getErrorStream(), baos)).start();
