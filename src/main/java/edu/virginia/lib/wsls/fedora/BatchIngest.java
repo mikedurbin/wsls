@@ -10,7 +10,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,7 +45,6 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import com.yourmediashelf.fedora.client.FedoraClient;
-import com.yourmediashelf.fedora.client.FedoraClientException;
 import com.yourmediashelf.fedora.client.FedoraCredentials;
 
 import edu.virginia.lib.wsls.proc.ImageMagickProcess;
@@ -55,7 +53,7 @@ import edu.virginia.lib.wsls.spreadsheet.ColumnNameBasedPBCoreRow;
 import edu.virginia.lib.wsls.spreadsheet.PBCoreDocument;
 
 /**
- * Ingests a batch of PBCore records (for video clips) and thier
+ * Ingests a batch of PBCore records (for video clips) and their
  * respective anchor scripts.  This class uses a single FOXML
  * ingest (as opposed to several REST API calls) to sidestep issues
  * of transaction.  If an object is in the repository, it can be
@@ -94,7 +92,13 @@ public class BatchIngest {
         p.load(BatchIngest.class.getClassLoader().getResourceAsStream("conf/fedora.properties"));
         FedoraClient fc = new FedoraClient(new FedoraCredentials(p.getProperty("fedora-url"), p.getProperty("fedora-username"), p.getProperty("fedora-password")));
 
-        b.ingest(fc, (args.length == 4 && "--replace".equals(args[3])));
+        Operation replace = Operation.ADD_MISSING;
+        if (args.length == 4 && "--replace".equals(args[3])) {
+            replace = Operation.REPLACE;
+        } else if (args.length == 4 && "--purge".equals(args[3])) {
+            replace = Operation.PURGE;
+        }
+        b.ingest(fc, replace);
     }
     
     public BatchIngest(File xls, File texts, File pdfs) {
@@ -104,15 +108,21 @@ public class BatchIngest {
     }
     
     public void validateSourceMaterials() throws Exception {
-        process(null, false);
+        process(null, Operation.ADD_MISSING);
     }
     
-    public void ingest(FedoraClient fc, boolean replace) throws Exception {
-        createHierarchyObjects(fc);
+    public void ingest(FedoraClient fc, Operation replace) throws Exception {
+        createHierarchyObjects(fc, replace);
         process(fc, replace);
     }
     
-    private void process(FedoraClient fc, boolean replace) throws FactoryConfigurationError, Exception {
+    private static enum Operation {
+        ADD_MISSING,
+        REPLACE,
+        PURGE;
+    }
+    
+    private void process(FedoraClient fc, Operation replace) throws FactoryConfigurationError, Exception {
         Workbook wb = null;
         try {
             wb = new HSSFWorkbook(new FileInputStream(spreadsheet));
@@ -143,17 +153,17 @@ public class BatchIngest {
                 // ingest the objects
                 List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", pbcore.getId());
                 Collections.sort(oldPids);
-                if (replace) {
+                if (replace.equals(Operation.PURGE) || replace.equals(Operation.REPLACE)) {
                     for (String pid : oldPids) {
                         FedoraClient.purgeObject(pid).execute(fc);
                         System.out.println("Purging " + pid);
                     }
                 }
-                if (replace || oldPids.isEmpty()) {
+                if (!(replace.equals(Operation.PURGE) || (replace.equals(Operation.ADD_MISSING) && !oldPids.isEmpty()))) {
                     File thumbnailFile = File.createTempFile("thumbnail-", ".png");
                     thumbnailFile.deleteOnExit();
                     t.generateThubmnail(pdf, thumbnailFile);
-                    
+
                     File mainFoxml = File.createTempFile("main-object-", "-foxml.xml");
                     mainFoxml.deleteOnExit();
                     String mainPid = oldPids.isEmpty() ? FedoraClient.getNextPID().execute(fc).getPid() : oldPids.get(0);
@@ -185,7 +195,7 @@ public class BatchIngest {
         }
     }
 
-    public void createHierarchyObjects(FedoraClient fc) throws Exception {
+    public void createHierarchyObjects(FedoraClient fc, Operation replace) throws Exception {
         Workbook wb = null;
         try {
             wb = new HSSFWorkbook(new FileInputStream(spreadsheet));
@@ -219,19 +229,31 @@ public class BatchIngest {
 
         List<String> years = new ArrayList<String>(representedYears);
         Collections.sort(years);
-        String collectionPid = createCollectionObject(fc);
-        String previousYearPid = null;
-        for (String year : years) {
-            System.out.println(year);
-            String yearPid = createYearObject(fc, year, collectionPid, previousYearPid);
-            List<String> months = new ArrayList<String>(representedMonths.get(year));
-            Collections.sort(months);
-            String previousMonthPid = null;
-            for (String month : months) {
-                System.out.println("  " + month);
-                previousMonthPid = createMonthObject(fc, month, yearPid, previousMonthPid);
+        if (replace.equals(Operation.PURGE)) {
+            purgeCollectionObject(fc);
+            for (String year : years) {
+                purgeYearObject(fc, year);
+                List<String> months = new ArrayList<String>(representedMonths.get(year));
+                for (String month : months) {
+                    System.out.println("  " + month);
+                    purgeMonthObject(fc, month);
+                }
             }
-            previousYearPid = yearPid;
+        } else {
+            String collectionPid = createCollectionObject(fc);
+            String previousYearPid = null;
+            for (String year : years) {
+                System.out.println(year);
+                String yearPid = createYearObject(fc, year, collectionPid, previousYearPid);
+                List<String> months = new ArrayList<String>(representedMonths.get(year));
+                Collections.sort(months);
+                String previousMonthPid = null;
+                for (String month : months) {
+                    System.out.println("  " + month);
+                    previousMonthPid = createMonthObject(fc, month, yearPid, previousMonthPid);
+                }
+                previousYearPid = yearPid;
+            }
         }
     }
 
@@ -254,6 +276,15 @@ public class BatchIngest {
         }
     }
 
+    private void purgeMonthObject(FedoraClient fc, String date) throws Exception {
+        String id = "wsls-" + date;
+        List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
+        if (!oldPids.isEmpty()) {
+            System.out.println("Purging month (" + date + ") object " + oldPids.get(0));
+           FedoraClient.purgeObject(oldPids.get(0)).execute(fc);
+        }
+    }
+
     private String createYearObject(FedoraClient fc, String date, String collectionPid, String previousPid) throws Exception {
         String id = "wsls-" + date;
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
@@ -273,6 +304,15 @@ public class BatchIngest {
         }
     }
 
+    private void purgeYearObject(FedoraClient fc, String date) throws Exception {
+        String id = "wsls-" + date;
+        List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
+        if (!oldPids.isEmpty()) {
+            System.out.println("Purging year (" + date + ") object " + oldPids.get(0));
+            FedoraClient.purgeObject(oldPids.get(0)).execute(fc);
+        }
+    }
+
     private String getMonthPidForDate(FedoraClient fc, String date) throws Exception {
         String id = "wsls-" + new SimpleDateFormat("yyyy-MM").format(new SimpleDateFormat("MM/dd/yy").parse(date));
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
@@ -284,7 +324,7 @@ public class BatchIngest {
         if (oldPids.isEmpty()) {
             String pid = FedoraClient.getNextPID().execute(fc).getPid();
             FedoraClient.ingest(pid).execute(fc);
-            FedoraClient.addDatastream(pid, "DC").content(new File(getClass().getClassLoader().getResource("collection-dc.xml").toURI())).execute(fc);
+            FedoraClient.addDatastream(pid, "DC").controlGroup("X").mimeType("text/xml").content(new File(getClass().getClassLoader().getResource("collection-dc.xml").toURI())).execute(fc);
             FedoraClient.addDatastream(pid, "descMetadata").content(new File(getClass().getClassLoader().getResource("collection-ead-fragment.xml").toURI())).execute(fc);
             FedoraClient.addRelationship(pid).object("info:fedora/uva-lib:eadCollectionCModel").predicate("info:fedora/fedora-system:def/model#hasModel").execute(fc);
             FedoraClient.addRelationship(pid).object("info:fedora/uva-lib:eadMetadataFragmentCModel").predicate("info:fedora/fedora-system:def/model#hasModel").execute(fc);
@@ -294,6 +334,14 @@ public class BatchIngest {
         } else {
             System.out.println("Located collection object at " + oldPids.get(0) + ".");
             return oldPids.get(0);
+        }
+    }
+    
+    private void purgeCollectionObject(FedoraClient fc) throws Exception {
+        List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", "wsls-collection");
+        if (!oldPids.isEmpty()) {
+            System.out.println("Purging collection (" + oldPids.get(0) + ").");
+            FedoraClient.purgeObject(oldPids.get(0));
         }
     }
 
