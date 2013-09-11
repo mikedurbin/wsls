@@ -10,10 +10,16 @@ public abstract class PBCoreSpreadsheetRow {
     
     protected Row row;
     
-    public PBCoreSpreadsheetRow(Row row) {
-        this.row = row;
-    }
+    protected ColumnMapping m;
     
+    public PBCoreSpreadsheetRow(Row row, ColumnMapping mapping) {
+        this.row = row;
+        m = mapping;
+    }
+
+    protected PBCoreSpreadsheetRow() {
+    }
+
     public abstract String getId();
     
     public abstract String getAssetDate();
@@ -35,7 +41,35 @@ public abstract class PBCoreSpreadsheetRow {
     public abstract String getInstantiationColors();
     
     public abstract String getInstantiationAnnotation();
-    
+
+    private int getOrCreateColumnIndex(String label) {
+        try {
+            return getMapping().getColumnForLabel(label);
+        } catch (IllegalArgumentException ex) {
+            return getMapping().addColumn(label);
+        }
+    }
+    public void markAsNotIngested(String status) {
+        int statusColIndex = getOrCreateColumnIndex("ingest status");
+        row.createCell(statusColIndex).setCellValue(status);
+    }
+
+    public void markAsIngested(String pid) {
+        int statusColIndex = getOrCreateColumnIndex("ingest status");
+        row.createCell(statusColIndex).setCellValue("ingested");
+
+        int pidColIndex = getOrCreateColumnIndex("fedora pid");
+        row.createCell(pidColIndex).setCellValue(pid);
+    }
+
+    public ColumnMapping getMapping() {
+        return m;
+    }
+
+    public String getNamedField(String label) {
+        return getString(getMapping().getColumnForLabel(label));
+    }
+
     protected String getString(int colIndex) {
         return getString(colIndex, null);
     }

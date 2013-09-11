@@ -1,6 +1,7 @@
 package edu.virginia.lib.wsls.spreadsheet;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,8 @@ import org.apache.poi.ss.usermodel.Row;
  */
 public class ColumnMapping {
 
+    private Row row;
+
     private Map<String, List<Integer>> mapping;
     
     /**
@@ -24,6 +27,7 @@ public class ColumnMapping {
      * the labels are entered.
      */
     public ColumnMapping(Row row) {
+        this.row = row;
         mapping = new HashMap<String, List<Integer>>();
         for (Cell cell : row) {
             String key = cell.getStringCellValue();
@@ -33,7 +37,7 @@ public class ColumnMapping {
                 mapping.put(key,  cols);
             }
             cols.add(cell.getColumnIndex());
-            System.out.println("\"" + key + "\" --> " + cell.getColumnIndex());
+            //System.out.println("\"" + key + "\" --> " + cell.getColumnIndex());
         }
     }
     
@@ -55,4 +59,27 @@ public class ColumnMapping {
         return mapping.get(label);
     }
     
+    public int addColumn(String label) {
+        if (mapping.containsKey(label)) {
+            throw new IllegalArgumentException("A column labeled \"" + label + "\" already exists!");
+        }
+
+        // determine first free column index
+        int max = 0;
+        for (Row r : row.getSheet()) {
+            for (Cell c : r) {
+                if (c.getColumnIndex() > max) {
+                    max = c.getColumnIndex();
+                }
+            }
+        }
+
+        // create the header
+        row.createCell(max + 1).setCellValue(label);
+
+        // update the map
+        mapping.put(label, Collections.singletonList(new Integer(max + 1)));
+
+        return max + 1;
+    }
 }

@@ -36,6 +36,7 @@ public class OCRTextSplitter {
     String text = null;
     File textFile = null;
     List<OCRPage> orderedPages;
+    private boolean eachPartIsCompleteCopy;
 
     public OCRTextSplitter(String[] filenames) throws IOException, InterruptedException {
         partPdfs = new ArrayList<ProcessedDocument>();
@@ -80,7 +81,13 @@ public class OCRTextSplitter {
             throw new IllegalArgumentException("There is no \"complete\" PDF, just parts!");
         }
         if (partsPages != completePdf.getPageCount()) {
-            throw new IllegalArgumentException("There is a different number of pages in the parts (" + partsPages + ") than in \"" + completePdf.getFilename() + "\" (" + completePdf.getFilename() + ")!");
+            for (ProcessedDocument d : partPdfs) {
+                if (d.getPageCount() != completePdf.getPageCount()) {
+                    throw new IllegalArgumentException("There is a different number of pages in the parts (" + partsPages + ") than in \"" + completePdf.getFilename() + "\" (" + completePdf.getPageCount() + ")!");
+                }
+            }
+            eachPartIsCompleteCopy = true;
+            return;
         }
 
         // determine page order (this algorithm is based on the assumption 
@@ -149,28 +156,39 @@ public class OCRTextSplitter {
     }
 
     public List<ProcessedDocument> getBestMatches() {
-        List<Integer> last = null;
-        for (int i = 0; i < orderedPages.size(); i ++) {
-            UncertainMatch result = new UncertainMatch(null, last);
-            if (i == orderedPages.size() - 1) {
-                // the remaining part is the match
-                // by default.
-                result.match = text;
-            } else {
-                String fuzzyFirst = orderedPages.get(i).getOCRText();
-                // we already ensured that all the pages are in order and complete
-                StringBuffer fuzzyRest = new StringBuffer();
-                for (int j = i + 1; j < orderedPages.size(); j ++) {
-                    fuzzyRest.append(orderedPages.get(j).getOCRText());
+        if (eachPartIsCompleteCopy) {
+            // copy the completePDF's text over each part
+            List<ProcessedDocument> result = new ArrayList<ProcessedDocument>();
+            for (ProcessedDocument part : partPdfs) {
+                for (int i = 0; i < part.getPageCount(); i ++) {
+                    part.getOrderedPages().get(i).setKeyedText(completePdf.getOrderedPages().get(i).getKeyedText());
                 }
-                result = matchFirstPartLevenshtein(fuzzyFirst, fuzzyRest.toString(), text);
-                //guessedFragments.add(first);
-                text = text.substring(result.match.length());
             }
-            last = result.scores;
-            orderedPages.get(i).setKeyedText(result);
+            return partPdfs;
+        } else {
+            List<Integer> last = null;
+            for (int i = 0; i < orderedPages.size(); i ++) {
+                UncertainMatch result = new UncertainMatch(null, last);
+                if (i == orderedPages.size() - 1) {
+                    // the remaining part is the match
+                    // by default.
+                    result.match = text;
+                } else {
+                    String fuzzyFirst = orderedPages.get(i).getOCRText();
+                    // we already ensured that all the pages are in order and complete
+                    StringBuffer fuzzyRest = new StringBuffer();
+                    for (int j = i + 1; j < orderedPages.size(); j ++) {
+                        fuzzyRest.append(orderedPages.get(j).getOCRText());
+                    }
+                    result = matchFirstPartLevenshtein(fuzzyFirst, fuzzyRest.toString(), text);
+                    //guessedFragments.add(first);
+                    text = text.substring(result.match.length());
+                }
+                last = result.scores;
+                orderedPages.get(i).setKeyedText(result);
+            }
+            return partPdfs;
         }
-        return partPdfs;
     }
 
     /**

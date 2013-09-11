@@ -10,6 +10,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,12 +48,14 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import com.yourmediashelf.fedora.client.FedoraClient;
+import com.yourmediashelf.fedora.client.FedoraClientException;
 import com.yourmediashelf.fedora.client.FedoraCredentials;
 
 import edu.virginia.lib.wsls.proc.ImageMagickProcess;
 import edu.virginia.lib.wsls.spreadsheet.ColumnMapping;
 import edu.virginia.lib.wsls.spreadsheet.ColumnNameBasedPBCoreRow;
 import edu.virginia.lib.wsls.spreadsheet.PBCoreDocument;
+import edu.virginia.lib.wsls.spreadsheet.PBCoreSpreadsheetRow;
 
 /**
  * Ingests a batch of PBCore records (for video clips) and their
@@ -77,6 +82,8 @@ public class BatchIngest {
     
     private File spreadsheet;
     
+    private Workbook wb;
+    
     public static void main(String [] args) throws Exception {
         if (args.length != 3 && args.length != 4) {
             System.err.println("Usage: BatchIngest [spreadsheet] [txtDir] [pdfDir] --replace");
@@ -101,10 +108,18 @@ public class BatchIngest {
         b.ingest(fc, replace);
     }
     
-    public BatchIngest(File xls, File texts, File pdfs) {
+    public BatchIngest(File xls, File texts, File pdfs) throws FileNotFoundException, IOException {
         scriptTextDir = texts;
         scriptPdfDir = pdfs;
         spreadsheet = xls;
+        
+        wb = null;
+        try {
+            wb = new HSSFWorkbook(new FileInputStream(spreadsheet));
+        } catch (OfficeXmlFileException ex) {
+            wb = new XSSFWorkbook(new FileInputStream(spreadsheet));
+        }
+        
     }
     
     public void validateSourceMaterials() throws Exception {
@@ -112,23 +127,17 @@ public class BatchIngest {
     }
     
     public void ingest(FedoraClient fc, Operation replace) throws Exception {
-        createHierarchyObjects(fc, replace);
+        createHierarchyObjects(wb, fc, replace);
         process(fc, replace);
     }
     
-    private static enum Operation {
+    public static enum Operation {
         ADD_MISSING,
         REPLACE,
         PURGE;
     }
     
     private void process(FedoraClient fc, Operation replace) throws FactoryConfigurationError, Exception {
-        Workbook wb = null;
-        try {
-            wb = new HSSFWorkbook(new FileInputStream(spreadsheet));
-        } catch (OfficeXmlFileException ex) {
-            wb = new XSSFWorkbook(new FileInputStream(spreadsheet));
-        }
         
         ImageMagickProcess t = new ImageMagickProcess();
         
@@ -194,14 +203,62 @@ public class BatchIngest {
             }
         }
     }
+    
+    public static void ingestRecord(FedoraClient fc, ImageMagickProcess t, String mainPid, String scriptPid, File pdf, File txt, PBCoreSpreadsheetRow row, String kalturaUrl) throws Exception {
 
-    public void createHierarchyObjects(FedoraClient fc, Operation replace) throws Exception {
-        Workbook wb = null;
+        File mainFoxml = File.createTempFile("main-object-", "-foxml.xml");
+        mainFoxml.deleteOnExit();
+        //String mainPid = oldPids.isEmpty() ? FedoraClient.getNextPID().execute(fc).getPid() : oldPids.get(0);
+        String parentPid = getMonthPidForDate(fc, row.getAssetDate());
+        String previousPid = determinePreviousPid(fc, parentPid, row.getAssetDate(), mainPid);
+        PBCoreDocument pbcore = new PBCoreDocument(row);
+        pbcore.setKalturaUrl(kalturaUrl);
+        writeOutPBCoreFoxml(mainPid, parentPid, previousPid, pbcore, new FileOutputStream(mainFoxml));
+
         try {
-            wb = new HSSFWorkbook(new FileInputStream(spreadsheet));
-        } catch (OfficeXmlFileException ex) {
-            wb = new XSSFWorkbook(new FileInputStream(spreadsheet));
+            mainPid = FedoraClient.ingest(mainPid).content(mainFoxml).execute(fc).getPid();
+            System.out.println("Ingested " + mainPid);
+        } catch (FedoraClientException ex) {
+            if (ex.getMessage().contains("org.fcrepo.server.errors.ObjectExistsException")) {
+                System.out.println("Skipped already ingested " + mainPid);
+            } else {
+                throw ex;
+            }
         }
+
+        if (pdf != null) {
+            File thumbnailFile = File.createTempFile("thumbnail-", ".png");
+            thumbnailFile.deleteOnExit();
+            t.generateThubmnail(pdf, thumbnailFile);
+
+            File scriptFoxml = File.createTempFile("script-object", "-foxml.xml");
+            scriptFoxml.deleteOnExit();
+            writeOutScriptFoxml(scriptPid, new FileOutputStream(scriptFoxml), pdf, txt, mainPid, pbcore.getId());
+            try {
+                scriptPid = FedoraClient.ingest(scriptPid).content(scriptFoxml).execute(fc).getPid();
+                System.out.println("Ingested " + scriptPid + " (script)");
+            } catch (FedoraClientException ex) {
+                if (ex.getMessage().contains("org.fcrepo.server.errors.ObjectExistsException")) {
+                    System.out.println("Skipped already ingested " + scriptPid);
+                } else {
+                    throw ex;
+                }
+            }
+        
+            if (thumbnailFile != null && thumbnailFile.exists() && thumbnailFile.length() > 0) {
+                FedoraClient.addDatastream(scriptPid, "thumbnail").controlGroup("M").content(thumbnailFile).mimeType("image/png").execute(fc);
+            } else {
+                System.err.println("Error generating thumbnail for " + pdf.getPath() + ".");
+            }
+        }
+    }
+    
+
+    public static void createHierarchyObjects(Workbook wb, FedoraClient fc, Operation replace) throws Exception {
+        createHierarchyObjects(wb, wb.getSheetAt(0).getLastRowNum(), fc, replace);
+    }
+
+    public static void createHierarchyObjects(Workbook wb, int max, FedoraClient fc, Operation replace) throws Exception {
 
         Set<String> representedYears = new HashSet<String>();
         Map<String, Set<String>> representedMonths = new HashMap<String, Set<String>>();
@@ -211,20 +268,26 @@ public class BatchIngest {
         SimpleDateFormat yearFormat = new SimpleDateFormat("yyyy");
         SimpleDateFormat monthYear = new SimpleDateFormat("yyyy-MM");
         ColumnMapping m = new ColumnMapping(sheet.getRow(0));
-        for (int i = 1; i <= sheet.getLastRowNum(); i ++) {
+        for (int i = 1; i <= sheet.getLastRowNum() && i <= max; i ++) {
             ColumnNameBasedPBCoreRow row = new ColumnNameBasedPBCoreRow(sheet.getRow(i), m);
             String date = row.getAssetDate();
-            Date d = format.parse(date);
-            Calendar c = new GregorianCalendar();
-            c.setTime(d);
-            String year = yearFormat.format(d);
-            representedYears.add(year);
-            Set<String> months = representedMonths.get(year);
-            if (months == null) {
-                months = new HashSet<String>();
-                representedMonths.put(year, months);
+            try {
+                Date d = format.parse(date);
+                Calendar c = new GregorianCalendar();
+                c.setTime(d);
+                String year = yearFormat.format(d);
+                representedYears.add(year);
+                Set<String> months = representedMonths.get(year);
+                if (months == null) {
+                    months = new HashSet<String>();
+                    representedMonths.put(year, months);
+                }
+                months.add(monthYear.format(d));
+            } catch (NullPointerException ex) {
+                // skip this date...
+            } catch (ParseException ex) {
+                // skip this date
             }
-            months.add(monthYear.format(d));
         }
 
         List<String> years = new ArrayList<String>(representedYears);
@@ -254,10 +317,11 @@ public class BatchIngest {
                 }
                 previousYearPid = yearPid;
             }
+            createYearObject(fc, "unknown", collectionPid, previousYearPid);
         }
     }
 
-    private String createMonthObject(FedoraClient fc, String date, String yearPid, String previousPid) throws Exception {
+    private static String createMonthObject(FedoraClient fc, String date, String yearPid, String previousPid) throws Exception {
         String id = "wsls-" + date;
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
         if (oldPids.isEmpty()) {
@@ -276,7 +340,7 @@ public class BatchIngest {
         }
     }
 
-    private void purgeMonthObject(FedoraClient fc, String date) throws Exception {
+    private static void purgeMonthObject(FedoraClient fc, String date) throws Exception {
         String id = "wsls-" + date;
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
         if (!oldPids.isEmpty()) {
@@ -285,7 +349,7 @@ public class BatchIngest {
         }
     }
 
-    private String createYearObject(FedoraClient fc, String date, String collectionPid, String previousPid) throws Exception {
+    private static String createYearObject(FedoraClient fc, String date, String collectionPid, String previousPid) throws Exception {
         String id = "wsls-" + date;
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
         if (oldPids.isEmpty()) {
@@ -304,7 +368,7 @@ public class BatchIngest {
         }
     }
 
-    private void purgeYearObject(FedoraClient fc, String date) throws Exception {
+    private static void purgeYearObject(FedoraClient fc, String date) throws Exception {
         String id = "wsls-" + date;
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
         if (!oldPids.isEmpty()) {
@@ -313,19 +377,46 @@ public class BatchIngest {
         }
     }
 
-    private String getMonthPidForDate(FedoraClient fc, String date) throws Exception {
-        String id = "wsls-" + new SimpleDateFormat("yyyy-MM").format(new SimpleDateFormat("MM/dd/yy").parse(date));
+    private static String getMonthPidForDate(FedoraClient fc, String date) throws Exception {
+        String id = "wsls-unknown";
+        try {
+            id = "wsls-" + new SimpleDateFormat("yyyy-MM").format(new SimpleDateFormat("MM/dd/yy").parse(date));
+        } catch (Throwable t) {
+            // do nothing
+        }
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", id);
+        if (oldPids.isEmpty()) {
+            throw new RuntimeException("Unable to find contianer for \"" + id + "\"!");
+        }
         return oldPids.get(0);
     }
 
-    private String createCollectionObject(FedoraClient fc) throws Exception {
+    private static Map<String, String> parentToLastChildMap = new HashMap<String, String>();
+    /**
+     * This crude implementation would put the item at the end of the list of
+     * children.  
+     */
+    private static String determinePreviousPid(FedoraClient fc, String parentPid, String dateStr, String pid) throws Exception {
+        /*
+         * GAAAH!!! this is dependent on syncupdates in the resource index which 
+         * isn't set in all of our environments.  Why isn't there a synchronous way
+         * to list the children of an object!?!
+         */
+        //List<String> partPids = FedoraHelper.getOrderedParts(fc, parentPid, FEDORA_RELS + "isPartOf", UVA_RELATIONSHIP_PREDICATE_PREFIX + "follows");
+        //return partPids.isEmpty() ? null : partPids.get(partPids.size() - 1);
+        String lastchild = parentToLastChildMap.get(parentPid);
+        parentToLastChildMap.put(parentPid, pid);
+        return lastchild;
+    }
+    
+
+    private static String createCollectionObject(FedoraClient fc) throws Exception {
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", "wsls-collection");
         if (oldPids.isEmpty()) {
             String pid = FedoraClient.getNextPID().execute(fc).getPid();
             FedoraClient.ingest(pid).execute(fc);
-            FedoraClient.addDatastream(pid, "DC").controlGroup("X").mimeType("text/xml").content(new File(getClass().getClassLoader().getResource("collection-dc.xml").toURI())).execute(fc);
-            FedoraClient.addDatastream(pid, "descMetadata").content(new File(getClass().getClassLoader().getResource("collection-ead-fragment.xml").toURI())).execute(fc);
+            FedoraClient.addDatastream(pid, "DC").controlGroup("X").mimeType("text/xml").content(new File(BatchIngest.class.getClassLoader().getResource("collection-dc.xml").toURI())).execute(fc);
+            FedoraClient.addDatastream(pid, "descMetadata").content(new File(BatchIngest.class.getClassLoader().getResource("collection-ead-fragment.xml").toURI())).execute(fc);
             FedoraClient.addRelationship(pid).object("info:fedora/uva-lib:eadCollectionCModel").predicate("info:fedora/fedora-system:def/model#hasModel").execute(fc);
             FedoraClient.addRelationship(pid).object("info:fedora/uva-lib:eadMetadataFragmentCModel").predicate("info:fedora/fedora-system:def/model#hasModel").execute(fc);
             FedoraClient.addRelationship(pid).isLiteral(true).object("UNDISCOVERABLE").predicate("http://fedora.lib.virginia.edu/relationships#visibility").execute(fc);
@@ -337,7 +428,7 @@ public class BatchIngest {
         }
     }
     
-    private void purgeCollectionObject(FedoraClient fc) throws Exception {
+    private static void purgeCollectionObject(FedoraClient fc) throws Exception {
         List<String> oldPids = getSubjectsWithLiteral(fc, "dc:identifier", "wsls-collection");
         if (!oldPids.isEmpty()) {
             System.out.println("Purging collection (" + oldPids.get(0) + ").");
@@ -351,11 +442,12 @@ public class BatchIngest {
      * @param pid the pid of the newly created object
      * @throws IOException 
      */
-    public void writeOutPBCoreFoxml(String pid, String parentPid, String previousPid, PBCoreDocument pbcore, OutputStream os) throws ParserConfigurationException, XMLStreamException, FactoryConfigurationError, TransformerException, IOException {
+    public static void writeOutPBCoreFoxml(String pid, String parentPid, String previousPid, PBCoreDocument pbcore, OutputStream os) throws ParserConfigurationException, XMLStreamException, FactoryConfigurationError, TransformerException, IOException {
+        if (parentPid.equals(previousPid)) throw new RuntimeException();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         pbcore.writeOutXML(baos);
         TransformerFactory tFactory = TransformerFactory.newInstance("net.sf.saxon.TransformerFactoryImpl", null);
-        Templates template = tFactory.newTemplates(new StreamSource(getClass().getClassLoader().getResourceAsStream("pbcore2-to-foxml.xsl")));
+        Templates template = tFactory.newTemplates(new StreamSource(BatchIngest.class.getClassLoader().getResourceAsStream("pbcore2-to-foxml.xsl")));
         Transformer t = template.newTransformer();
         t.setParameter("pid", pid);
         t.setParameter("id", pbcore.getId());
@@ -372,7 +464,7 @@ public class BatchIngest {
     /**
      * Writes out FOXML for the object that contains thescript and text file.
      */
-    public void writeOutScriptFoxml(String pid, OutputStream os, File pdf, File text, String pbcoreObjectPid, String id) throws XMLStreamException, FactoryConfigurationError, FileNotFoundException, IOException {
+    public static void writeOutScriptFoxml(String pid, OutputStream os, File pdf, File text, String pbcoreObjectPid, String id) throws XMLStreamException, FactoryConfigurationError, FileNotFoundException, IOException {
         XMLStreamWriter w = XMLOutputFactory.newInstance().createXMLStreamWriter(os);
         w.writeStartDocument("UTF-8", "1.0");
         w.writeCharacters("\n");
@@ -438,9 +530,11 @@ public class BatchIngest {
         w.writeStartElement("fedora-model", "hasModel", FEDORA_MODEL);
         w.writeAttribute("rdf", RDF_URI, "resource", "info:fedora/uva-lib:wslsScriptCModel");
         w.writeEndElement(); // fedora-model:hasModel
-        w.writeStartElement("wsls", "isAnchorScriptFor", WSLS_RELATIONSHIP_PREDICATE_PREFIX);
-        w.writeAttribute("rdf", RDF_URI, "resource", "info:fedora/" + pbcoreObjectPid);
-        w.writeEndElement(); // wsls:isAnchorScriptFor
+        if (pbcoreObjectPid != null) {
+            w.writeStartElement("wsls", "isAnchorScriptFor", WSLS_RELATIONSHIP_PREDICATE_PREFIX);
+            w.writeAttribute("rdf", RDF_URI, "resource", "info:fedora/" + pbcoreObjectPid);
+            w.writeEndElement(); // wsls:isAnchorScriptFor
+        }
         w.writeEndElement(); // rdf:Description
         w.writeEndElement(); // rdf:RDF
         w.writeEndElement(); // foxml:xmlConent
@@ -448,11 +542,20 @@ public class BatchIngest {
         w.writeEndElement(); // foxml:datastream (RELS-EXT)
         
         // scriptPDF
-        embedFile(os, w, "scriptPDF", "application/pdf", null, pdf);
-        
+        if (pdf != null) {
+            embedFile(os, w, "scriptPDF", "application/pdf", null, pdf);
+        }
         // scriptTXT
-        embedFile(os, w, "scriptTXT", "text/plain", null, text);
-        
+        if (text != null) {
+            embedFile(os, w, "scriptTXT", "text/plain", null, text);
+        } else {
+            File emptyText = File.createTempFile("empty-text", ".txt");
+            PrintWriter p = new PrintWriter(new OutputStreamWriter(new FileOutputStream(emptyText)));
+            p.println("Missing text file");
+            p.close();
+            embedFile(os, w, "scriptTXT", "text/plain", null, emptyText);
+            emptyText.delete();
+        }
         w.writeEndElement(); // foxml:digitalObject
         w.writeEndDocument();
         w.flush();
@@ -463,7 +566,7 @@ public class BatchIngest {
      * Writes out FOXML for the object that represents a component (year, month
      * or whatever).
      */
-    public void writeOutHierarchyFoxml(List<String> contentModelPids, String pid, String parentPid, String previousPid, String id, String w3cdtfDate, String title, String description, OutputStream os) throws XMLStreamException, FactoryConfigurationError, FileNotFoundException, IOException {
+    public static void writeOutHierarchyFoxml(List<String> contentModelPids, String pid, String parentPid, String previousPid, String id, String w3cdtfDate, String title, String description, OutputStream os) throws XMLStreamException, FactoryConfigurationError, FileNotFoundException, IOException {
         XMLStreamWriter w = XMLOutputFactory.newInstance().createXMLStreamWriter(os);
         w.writeStartDocument("UTF-8", "1.0");
         w.writeCharacters("\n");
@@ -615,7 +718,7 @@ public class BatchIngest {
         w.close();
     }
     
-    private void embedFile(OutputStream underlyingOutputStream, XMLStreamWriter w, String dsId, String mimeType, String checksum, File file) throws XMLStreamException, FileNotFoundException, IOException {
+    private static void embedFile(OutputStream underlyingOutputStream, XMLStreamWriter w, String dsId, String mimeType, String checksum, File file) throws XMLStreamException, FileNotFoundException, IOException {
         w.writeStartElement("foxml", "datastream", FOXML_URI);
         w.writeAttribute("ID", dsId);
         w.writeAttribute("STATE", "A");

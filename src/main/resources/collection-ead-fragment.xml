@@ -37,8 +37,7 @@
         are some news clips that do not have anchorperson scripts, and likewise, there are some
         scripts for which a matching video has not been found. These variations will be displayed in
         their own catalog records.</p>
-    </bioghist>
-    <scopecontent>
+
       <p>Content of the news stories varies greatly from soapbox derbies to civil rights
         demonstrations. Local affairs and politics, sports, community events and social occasions,
         and personalities of the Roanoke, Va., region constitute the bulk of the collection. Content
@@ -50,12 +49,9 @@
       <p>Each news story is searchable by both free-text keywords and controlled subject terms via
         Virgo. The WSLS-TV Roanoke, Va., News Film Collection record also offers date-based
         browsing.</p>
-
-    </scopecontent>
+    </bioghist>
     <dsc type="in-depth">
       <head>Contents List</head>
-
-
     </dsc>
   </archdesc>
 </ead>

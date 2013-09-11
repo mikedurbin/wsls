@@ -7,11 +7,8 @@ import org.apache.poi.ss.usermodel.Row;
 
 public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
 
-    private ColumnMapping m;
-    
     public ColumnNameBasedPBCoreRow(Row row, ColumnMapping m) {
-        super(row);
-        this.m = m;
+        super(row, m);
     }
     
     public String getId() {
@@ -23,7 +20,11 @@ public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
     }
     
     public String getTitle() {
-        return getString(m.getColumnForLabel("pbcoreTitle"));
+        try {
+            return getString(m.getColumnForLabel("pbcoreTitle"));
+        } catch (IllegalArgumentException ex) {
+            return getString(m.getColumnForLabel("pbcoreDescription type=Title"));
+        }
     }
     
     public String getAbstract() {
@@ -43,12 +44,16 @@ public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
     
     public List<String> getTopics() {
         List<String> topics = new ArrayList<String>();
+        /* The topics from the master spreadsheet are no good... so we shouldn't
+         *bother parsing them...
+         
         for (int i : m.getColumnsForLabel("pbcoreSubject type=Topic source=LCSH")) {
             String topic = getString(i);
             if (topic != null) {
                 topics.add(topic);
             }
         }
+        */
         return topics;
     }
     
@@ -88,5 +93,5 @@ public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
 
     public String getInstantiationAnnotation() {
         return getString(m.getColumnForLabel("instantiationAnnotation"));
-    }  
+    }
 }

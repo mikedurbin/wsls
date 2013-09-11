@@ -62,6 +62,13 @@ public class FileListing {
     }
 
     private static final Pattern SPLIT_PDF_PATTERN = Pattern.compile("(\\d\\d\\d\\d)_(\\d).*\\.pdf");
+    /**
+     * Determines if a set of files needs to be split based on the presence of
+     * a part pdf file.
+     * @param files a set of files (pdf) for a given identifier.  This
+     * is typically the result of getFilesForNumber()
+     * @return true if more than one part exists.
+     */
     public static boolean requiresSplitting(List<File> files) {
         Set<Integer> parts = new HashSet<Integer>();
         for (File f : files) {

@@ -1,0 +1,25 @@
+# A directory in which the lucene indexes that maintain registries of known
+# WSLS pids are maintained.
+pid-registry-root:
+
+# The master spreadsheet from the previous ingest. (Used to detect changes)
+last-master:
+# The master spreadsheet from the current ingest.
+current-master:
+
+# The google spreadsheet from the last ingest. (Used to detect changes)
+last-google:
+# The google spreadsheet from the current ingest.
+current-google:
+
+# The directory of split PDF files.
+pdf-dir:
+# The directory of split TXT files.
+txt-dir:
+
+# A file containing a mapping from WSLS ids to the kaltura video IDs.
+kaltura-id-log:
+
+# A text file that contains ids that should be reingested despite a lack of
+# detectable differences.
+redo:

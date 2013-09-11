@@ -116,7 +116,7 @@
             </wsdl:operation>
             <wsdl:operation name="getMetadataAsEADFragment">
               <http:operation
-                location="http://localhost:8080/saxon/SaxonServlet?source=(metadata)&amp;style=http://local.fedora.server/fedora/get/uva-lib:descMetadataPBCore2SDep/XSLT&amp;pid=(pid)&amp;sourceUrl=(metadata)&amp;thisUrl=http://local.fedora.server/fedora/get/uva-lib:descMetadataPBCore2SDep/XSLT&amp;clear-stylesheet-cache=no"/>
+                location="http://transform.lib.virginia.edu:8084/saxon/SaxonServlet?source=(metadata)&amp;style=http://local.fedora.server/fedora/get/uva-lib:descMetadataPBCore2SDep/XSLT&amp;pid=(pid)&amp;sourceUrl=(metadata)&amp;thisUrl=http://local.fedora.server/fedora/get/uva-lib:descMetadataPBCore2SDep/XSLT&amp;clear-stylesheet-cache=no"/>
               <wsdl:input>
                 <http:urlReplacement/>
               </wsdl:input>

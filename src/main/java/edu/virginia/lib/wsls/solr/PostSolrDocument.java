@@ -1,18 +1,20 @@
 package edu.virginia.lib.wsls.solr;
 
 import static edu.virginia.lib.wsls.fedora.FedoraHelper.getSubjects;
-import static edu.virginia.lib.wsls.fedora.FedoraHelper.getSubjectsWithLiteral;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 import org.apache.commons.httpclient.HttpClient;
@@ -27,43 +29,134 @@ import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
 import org.apache.commons.httpclient.methods.multipart.Part;
 
 import com.yourmediashelf.fedora.client.FedoraClient;
+import com.yourmediashelf.fedora.client.FedoraClientException;
 import com.yourmediashelf.fedora.client.FedoraCredentials;
 
 public class PostSolrDocument {
     
     public static void main(String [] args) throws Exception {
+        PostSolrDocument solr = new PostSolrDocument();
+        solr.reindexWSLSCollection(false);
+    }
+
+    private FedoraClient fc;
+
+    private String updateUrl;
+    private String servicePid;
+    private String serviceMethod;
+
+    public PostSolrDocument() throws IOException {
         Properties p = new Properties();
         p.load(PostSolrDocument.class.getClassLoader().getResourceAsStream("conf/fedora.properties"));
-        FedoraClient fc = new FedoraClient(new FedoraCredentials(p.getProperty("fedora-url"), p.getProperty("fedora-username"), p.getProperty("fedora-password")));
+        fc = new FedoraClient(new FedoraCredentials(p.getProperty("fedora-url"), p.getProperty("fedora-username"), p.getProperty("fedora-password")));
 
         p.load(PostSolrDocument.class.getClassLoader().getResourceAsStream("conf/solr.properties"));
+        updateUrl = p.getProperty("solr.update");
+        servicePid = "uva-lib:indexableSDef";
+        serviceMethod = "getIndexingMetadata";
 
-        for (String pid : getSubjects(fc, "info:fedora/fedora-system:def/model#hasModel", "uva-lib:pbcore2CModel")) {
-            try {
-                indexPid(fc, pid, p.getProperty("solr.update"), "uva-lib:indexableSDef", "getIndexingMetadata");
-            } catch (Throwable t) {
-                t.printStackTrace();
-                System.out.println("Unable to index " + pid);
-            }
+        System.out.println("Created Solr Indexer to index content from " + p.getProperty("fedora-url") + " into the SOLR index at " + updateUrl + ".");
+    }
+
+    private void regenerateCollectionSummary(String collectionPid) throws IOException, FedoraClientException {
+        long start = System.currentTimeMillis();
+        System.out.println("Regenerating cached hierarchy...");
+        try {
+            FedoraClient.purgeDatastream(collectionPid, "hierarchy-brief-cached").execute(fc);
+        } catch (FedoraClientException ex) {
+            // unable to delete datastream
+            System.out.println(ex.getMessage());
         }
-
-        String collectionPid = getSubjectsWithLiteral(fc, "dc:identifier", "wsls-collection").get(0);
-        indexPid(fc, collectionPid, p.getProperty("solr.update"), "uva-lib:indexableSDef", "getIndexingMetadata");
-        for (String yearPid : getSubjects(fc, "info:fedora/fedora-system:def/relations-external#isPartOf", collectionPid)) {
-            indexPid(fc, yearPid, p.getProperty("solr.update"), "uva-lib:indexableSDef", "getIndexingMetadata");
-            for (String monthPid : getSubjects(fc, "info:fedora/fedora-system:def/relations-external#isPartOf", yearPid)) {
-                indexPid(fc, monthPid, p.getProperty("solr.update"), "uva-lib:indexableSDef", "getIndexingMetadata");
-            }
-        }
-
-        commit(p.getProperty("solr.update"));
-
+        File temp = File.createTempFile("hierarchy-brief-cached", ".xml");
+        temp.deleteOnExit();
+        FileOutputStream o = new FileOutputStream(temp);
+        writeStreamToStream(FedoraClient.getDissemination(collectionPid, "uva-lib:hierarchicalMetadataSDef", "getSummary").execute(fc).getEntityInputStream(), o);
+        o.close();
+        FedoraClient.addDatastream(collectionPid, "hierarchy-brief-cached").content(temp).mimeType("text/xml").controlGroup("M").dsLabel("cached result of uva-lib:hierarchicalMetadataSDef/getSummary").execute(fc);
+        long end = System.currentTimeMillis();
+        System.out.println("Completed in " + (end - start) + "ms.");
     }
     
-    public static void indexPid(FedoraClient fc, String pid, String updateUrl, String servicePid, String serviceMethod) throws Exception {
+    public void reindexWSLSCollection(boolean regenerate) throws Exception {
+        String collectionPid = "uva-lib:2214294";
+        try {
+            List<String> failedPids = new ArrayList<String>();
+            indexPid(collectionPid, fc, regenerate);
+            for (String yearPid : getSubjects(fc, "info:fedora/fedora-system:def/relations-external#isPartOf", collectionPid)) {
+                try {
+                    indexPid(yearPid, fc, regenerate);
+                } catch (Throwable t) {
+                    System.out.println("failed to index year " + yearPid);
+                    failedPids.add(yearPid);
+                }
+                for (String monthPid : getSubjects(fc, "info:fedora/fedora-system:def/relations-external#isPartOf", yearPid)) {
+                    try {
+                        indexPid(monthPid, fc, regenerate);
+                    } catch (Throwable t) {
+                        System.out.println(" failed to index month " + monthPid);
+                        failedPids.add(monthPid);
+                        t.printStackTrace();
+                    }
+                }
+            }
+    
+            for (String pid : getSubjects(fc, "info:fedora/fedora-system:def/model#hasModel", "uva-lib:pbcore2CModel")) {
+                try {
+                    indexPid(pid, fc, regenerate);
+                } catch (Throwable t) {
+                    failedPids.add(pid);
+                    t.printStackTrace();
+                    System.out.println("Unable to index " + pid);
+                }
+            }
+
+            //reindex any failures
+            for (String pid : failedPids) {
+                try {
+                    indexPid(pid, fc, regenerate);
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                    System.out.println("Retrying after 30 second...");
+                    Thread.sleep(30000);
+                    try {
+                        indexPid(pid, fc, regenerate);
+                    } catch (Throwable t2) {
+                        System.out.println("Retrying after 5 minutes...");
+                        Thread.sleep(300000);
+                        indexPid(pid, fc, regenerate);
+                    }
+                }
+            }
+
+            commit();
+            optimize();
+        } catch (Throwable t) {
+            System.err.println("Error, rolling back index updates!");
+            rollback();
+        }
+    }
+
+    public void indexPid(String pid, FedoraClient fc, boolean regenerate) throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        writeStreamToStream(FedoraClient.getDissemination(pid, servicePid, serviceMethod).execute(fc).getEntityInputStream(), baos);
-        
+        if (!regenerate) {
+            try {
+                writeStreamToStream(FedoraClient.getDatastreamDissemination(pid, "solrArchive").execute(fc).getEntityInputStream(), baos);
+            } catch (Exception ex) {
+                //System.out.println("No solrArchive datastream for " + pid + ", regenerating...");
+                regenerate = true;
+            }
+        }
+        if (regenerate) {
+            if (pid.equals("uva-lib:2214294")) {
+                // because of a timeout issue, we cache the result of a dissemination in the collection object
+                if (regenerate) {
+                    regenerateCollectionSummary(pid);
+                }
+            }
+
+            writeStreamToStream(FedoraClient.getDissemination(pid, servicePid, serviceMethod).execute(fc).getEntityInputStream(), baos);
+            FedoraClient.addDatastream(pid, "solrArchive").content(new String(baos.toByteArray(), "UTF-8")).controlGroup("M").versionable(true).mimeType("text/xml").dsLabel("Index Data for Posting to Solr").execute(fc);
+        }
         HttpClient client = new HttpClient();
 
         PostMethod post = new PostMethod(updateUrl);
@@ -84,10 +177,25 @@ public class PostSolrDocument {
         } finally {
             post.releaseConnection();
         }
-        
     }
-    
-    public static void postFile(File f, String updateUrl) throws HttpException, IOException {
+
+    public void purgeRecord(String pid) throws HttpException, IOException {
+        String url = updateUrl + "?stream.body=" + URLEncoder.encode("<delete><query>id:\"" + pid + "\"</query></delete>", "UTF-8");
+        GetMethod get = new GetMethod(url);
+        try {
+            HttpClient client = new HttpClient();
+            client.executeMethod(get);
+            int status = get.getStatusCode();
+            if (status != HttpStatus.SC_OK) {
+                throw new RuntimeException("REST action \"" + url + "\" failed: " + get.getStatusLine());
+            }
+            System.out.println("Purged record for pid " + pid);
+        } finally {
+            get.releaseConnection();
+        }
+    }
+
+    public void postFile(File f) throws HttpException, IOException {
         HttpClient client = new HttpClient();
 
         PostMethod post = new PostMethod(updateUrl);
@@ -109,8 +217,8 @@ public class PostSolrDocument {
             post.releaseConnection();
         }
     }
-    
-    public static void commit(String updateUrl) throws HttpException, IOException {
+
+    public void commit() throws HttpException, IOException {
         String url = updateUrl + "?stream.body=%3Ccommit/%3E";
         GetMethod get = new GetMethod(url);
         try {
@@ -125,8 +233,8 @@ public class PostSolrDocument {
             get.releaseConnection();
         }
     }
-    
-    public static void rollback(String updateUrl) throws HttpException, IOException {
+
+    public void rollback() throws HttpException, IOException {
         String url = updateUrl + "?stream.body=%3Crollback/%3E";
         GetMethod get = new GetMethod(url);
         try {
@@ -140,8 +248,24 @@ public class PostSolrDocument {
             get.releaseConnection();
         }
     }
+
+    public void optimize() throws HttpException, IOException {
+        String url = updateUrl + "?stream.body=%3Coptimize/%3E";
+        GetMethod get = new GetMethod(url);
+        try {
+            HttpClient client = new HttpClient();
+            client.executeMethod(get);
+            int status = get.getStatusCode();
+            if (status != HttpStatus.SC_OK) {
+                throw new RuntimeException("REST action \"" + url + "\" failed: " + get.getStatusLine());
+            }
+            System.out.println("Optimized index");
+        } finally {
+            get.releaseConnection();
+        }
+    }
     
-    public static void writeStreamToStream(InputStream is, OutputStream os) throws IOException {
+    public void writeStreamToStream(InputStream is, OutputStream os) throws IOException {
         ReadableByteChannel inputChannel = Channels.newChannel(is);  
         WritableByteChannel outputChannel = Channels.newChannel(os);  
         ByteBuffer buffer = ByteBuffer.allocateDirect(16 * 1024);  

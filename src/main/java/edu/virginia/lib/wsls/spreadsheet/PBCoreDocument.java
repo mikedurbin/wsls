@@ -3,8 +3,15 @@ package edu.virginia.lib.wsls.spreadsheet;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 
 import javax.xml.namespace.NamespaceContext;
 import javax.xml.parsers.DocumentBuilder;
@@ -21,6 +28,7 @@ import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
 
+import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -32,12 +40,171 @@ public class PBCoreDocument {
     public static final String PBCORE_NS = "http://www.pbcore.org/PBCore/PBCoreNamespace.html";
     public static final String PBCORE_XSD_LOC = "http://www.pbcore.org/xsd/pbcore-2.0.xsd";
     public static final String XSI_NS = "http://www.w3.org/2001/XMLSchema-instance";
-    
+
+    private List<PBCoreSpreadsheetRow> records;
+
     private Document doc; 
-    
-    private String id;
-    
+
+    /** A URL to override whatever the specified kaltura URL is */
+    private String url;
+
     public PBCoreDocument(PBCoreSpreadsheetRow row) throws ParserConfigurationException {
+        records = Collections.singletonList(row);
+    }
+
+    public PBCoreDocument(PBCoreSpreadsheetRow ... rows) throws ParserConfigurationException {
+        records = new ArrayList<PBCoreSpreadsheetRow>();
+        for (PBCoreSpreadsheetRow row : rows) {
+            if (row != null) {
+                records.add(row);
+            }
+        }
+    }
+
+    public void setKalturaUrl(String url) {
+        if (doc != null) {
+            throw new IllegalStateException("The document has already been committed!");
+        }
+        this.url = url;
+    }
+
+    public String getId() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getId() != null) {
+                return r.getId();
+            }
+        }
+        return null;
+    }
+
+    public String getAssetDate() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getAssetDate() != null) {
+                return r.getAssetDate();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Parses the AssetDate and if a valid month and year are specified, returns
+     * an array with the year and month as the first and second element.  Ie,
+     * for the date "12/19/2012" an array of [2012, 12] would be returned.  For
+     * a date value of "1992" or "0/0/1992" null would be returned.
+     * @return
+     */
+    public VariablePrecisionDate getAssetVariablePrecisionDate() {
+        String date = getAssetDate();
+        if (date == null) {
+            return null;
+        } else {
+            String[] mdy = date.split("/");
+            if (mdy.length != 3) {
+                throw new IllegalArgumentException("Unrecognized date: \"" + date + "\"");
+            } else {
+                int day = Integer.parseInt(mdy[1]);
+                if (day > 31 || day < 1) {
+                    return null;
+                }
+                int month = Integer.parseInt(mdy[0]);
+                if (month > 12 || month < 1) {
+                    return null;
+                }
+                int year = Integer.parseInt(mdy[2]);
+                if (year < 100) {
+                    year += 1900;
+                }
+                if (year < 1000 || year > 9999) {
+                    return null;
+                } else {
+                    return new VariablePrecisionDate(year, month, day);
+                }
+            }
+        }
+    }
+
+    public String getTitle() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getTitle() != null) {
+                return r.getTitle();
+            }
+        }
+        return null;
+    }
+
+    public String getAbstract() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getAbstract() != null) {
+                return r.getAbstract();
+            }
+        }
+        return null;
+    }
+
+    public List<String> getPlaces() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getPlaces() != null) {
+                return r.getPlaces();
+            }
+        }
+        return null;
+    }
+
+    public List<String> getTopics() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getTopics() != null) {
+                return r.getTopics();
+            }
+        }
+        return null;
+    }
+
+    public List<String> getEntitiesLCSH() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getEntitiesLCSH() != null) {
+                return r.getEntitiesLCSH();
+            }
+        }
+        return null;
+    }
+
+    public String getInstantiationLocation() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getInstantiationLocation() != null) {
+                return r.getInstantiationLocation();
+            }
+        }
+        return null;
+    }
+
+    public String getInstantiationDuration() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getInstantiationDuration() != null) {
+                return r.getInstantiationDuration();
+            }
+        }
+        return null;
+    }
+
+    public String getInstantiationColors() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getInstantiationColors() != null) {
+                return r.getInstantiationColors();
+            }
+        }
+        return null;
+    }
+
+    public String getInstantiationAnnotation() {
+        for (PBCoreSpreadsheetRow r : records) {
+            if (r.getInstantiationAnnotation() != null) {
+                return r.getInstantiationAnnotation();
+            }
+        }
+        return null;
+    }
+
+    private void processPBCoreRows() throws ParserConfigurationException {
         // create a document
         DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
         f.setNamespaceAware(true);
@@ -51,34 +218,36 @@ public class PBCoreDocument {
         String type = "clip";
         addPBCoreElement(root, "pbcoreAssetType", type);
         
-        String date = row.getAssetDate();
-        addPBCoreElement(root, "pbcoreAssetDate", date, "content");
+        if (getAssetVariablePrecisionDate() != null) {
+            String date = getAssetDate();
+            addPBCoreElement(root, "pbcoreAssetDate", date, "content");
+        }
         
-        addPBCoreElement(root, "pbcoreIdentifier", row.getId(), "source", "uva");
-        id = row.getId();
+        addPBCoreElement(root, "pbcoreIdentifier", getId(), "source", "uva");
+        String id = getId();
         
-        addPBCoreElement(root, "pbcoreTitle", row.getTitle());
+        addPBCoreElement(root, "pbcoreTitle", getTitle());
         
-        for (String topic : row.getTopics()) {
+        for (String topic : getTopics()) {
             addPBCoreElement(root, "pbcoreSubject", topic, "subjectType", "Topic", "source", "LCSH");
         }
         
-        for (String place : row.getPlaces()) {
+        for (String place : getPlaces()) {
             addPBCoreElement(root, "pbcoreSubject", place, "subjectType", "Place", "source", "LCSH");
         }
 
-        for (String entity : row.getEntitiesLCSH()) {
+        for (String entity : getEntitiesLCSH()) {
             addPBCoreElement(root, "pbcoreSubject", entity, "subjectType", "Entity", "source", "LCSH");
         }
         
-        addPBCoreElement(root, "pbcoreDescription", row.getAbstract(), "descriptionType", "abstract");
+        addPBCoreElement(root, "pbcoreDescription", getAbstract(), "descriptionType", "abstract");
 
         Element instanceEl = doc.createElementNS(PBCORE_NS, "pbcoreInstantiation");
-        addPBCoreElement(instanceEl, "instantiationIdentifier", row.getId(), "source", "uva");
-        addPBCoreElement(instanceEl, "instantiationLocation", row.getInstantiationLocation());
-        addPBCoreElement(instanceEl, "instantiationDuration", row.getInstantiationDuration());
-        addPBCoreElement(instanceEl, "instantiationColors", row.getInstantiationColors());
-        addPBCoreElement(instanceEl, "instantiationAnnotation", row.getInstantiationAnnotation());
+        addPBCoreElement(instanceEl, "instantiationIdentifier", getId(), "source", "uva");
+        addPBCoreElement(instanceEl, "instantiationLocation", (url != null ? url : getInstantiationLocation()));
+        addPBCoreElement(instanceEl, "instantiationDuration", getInstantiationDuration());
+        addPBCoreElement(instanceEl, "instantiationColors", getInstantiationColors());
+        addPBCoreElement(instanceEl, "instantiationAnnotation", getInstantiationAnnotation());
         root.appendChild(instanceEl);
     }
     
@@ -95,11 +264,7 @@ public class PBCoreDocument {
         }
         
     }
-    
-    public String getId() {
-        return id;
-    }
-    
+
     /**
      * Appends the pbcore:instantiation element from the pbcore document 
      * that is parsed from the provided InputStream to this document.  This
@@ -109,6 +274,9 @@ public class PBCoreDocument {
      * instantiation element is to be appended to this record.
      */
     public void appendInstantiationIfAvailable(InputStream is) throws ParserConfigurationException, SAXException, IOException, XPathExpressionException {
+        if (doc == null) {
+            processPBCoreRows();
+        }
         if (is == null) {
             return;
         }
@@ -162,11 +330,17 @@ public class PBCoreDocument {
         return builder.parse(is);
     }
     
-    public Document getDocument() {
+    public Document getDocument() throws ParserConfigurationException {
+        if (doc == null) {
+            processPBCoreRows();
+        }
         return doc;
     }
-    
-    public void writeOutXML(OutputStream os) throws TransformerException {
+
+    public void writeOutXML(OutputStream os) throws TransformerException, ParserConfigurationException {
+        if (doc == null) {
+            processPBCoreRows();
+        }
         DOMSource source = new DOMSource(doc);
         StreamResult sResult = new StreamResult(os);
         TransformerFactory tFactory = TransformerFactory.newInstance("net.sf.saxon.TransformerFactoryImpl", null);
@@ -177,5 +351,61 @@ public class PBCoreDocument {
         t.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
         t.transform(source, sResult);
     }
-    
+
+    public String getXMLAsString() throws TransformerException, ParserConfigurationException, IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        writeOutXML(baos);
+        baos.close();
+        return new String(baos.toByteArray(), "UTF-8");
+    }
+
+    public static class VariablePrecisionDate {
+        Integer year;
+        Integer month;
+        Integer day;
+
+        public VariablePrecisionDate(int y, int m) {
+            year = y;
+            month = m;
+            day = null;
+        }
+        
+        public VariablePrecisionDate(int y, int m, int d) {
+            year = y;
+            month = m;
+            if (d > 0) {
+                day = d;
+            }
+        }
+
+        public int getYear() {
+            return year;
+        }
+
+        public int getMonth() {
+            return month;
+        }
+
+        public boolean hasDay() {
+            return day != null;
+        }
+
+        public Integer getDay() {
+            return day;
+        }
+
+        public String toWC3DTF() {
+            return year + "-" + new DecimalFormat("00").format(month);
+        }
+
+        public String getMonthString() {
+            Calendar c = Calendar.getInstance();
+            c.set(Calendar.MONTH, month - 1);
+            return new SimpleDateFormat("MMMM").format(c.getTime());
+        }
+
+        public String toString() {
+            return year + "-" + month + "-" + (day == null ? "00" : String.valueOf(day));
+        }
+    }
 }
