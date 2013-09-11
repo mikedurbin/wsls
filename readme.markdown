@@ -6,39 +6,15 @@ into PBCore records, and fedora object XML exists to support the
 validation and transformation of that PBCore into SOLR add documents
 suitable for use in Virgo (a Blacklight-based discovery system).
 
-## BatchIngest.java
-A simple program that takes a provided spreadsheet, pdf directory and
-text directory and ingests all items represented on the spreadsheet
-for which a PDF and TXT file exist.
+## ProductionIngester.java
+A sophisticated program that takes a suite of inputs and ingests
+records to the configured repository and indexes them in the
+configured solr index.
 
-The fedora repository to which the files are ingested is configured in
-the src/main/resources/conf/fedora.properties file.
+The required configurations are found and explained in the 
+/src/main/resources/conf/ directory.
 
-This program uses ImageMagick to generate thumbnail images of the PDFs.
-On linux systems, as long as "convert" is in the path for the user running
-this program, no configuration change is necessary.  On other platforms 
-in the file src/main/resources/conf/image-magick.properties the path should
-be specified.
-
-	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.fedora.BatchIngest -Dexec.args="spreadsheet.xlsx texts pdfs"
-
-## PostSolrDocument.java
-A simple program that indexes everything in the configured fedora 
-repository that has the "uva-lib:pbcore2CModel" content model to the
-SOLR server configured in src/main/resources/conf/solr.properties.
-
-	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.solr.PostSolrDocument
-
-## ContentAnalyzer.java
-A program that takes a CSV file containing two columns (the uploaded video file name
-and the system ID it was assigned upon upload) and a directory of PDF files and 
-generates a report attempting to match the files based on the ids it can glean from
-the filenames.
-
-The output is a CSV file sorted by id containing a row for every id for which a script
-or a clip has been matched.
-
-	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.util.ContentAnalyzer -Dexec.args="uploaded.csv pdfs output.csv"
+	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.fedora.ProductionIngester
 
 ## foxml files
 * __uva-lib:documentedMappingCModel__: a content model for objects 
