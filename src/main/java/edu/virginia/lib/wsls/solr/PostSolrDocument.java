@@ -2,17 +2,22 @@ package edu.virginia.lib.wsls.solr;
 
 import static edu.virginia.lib.wsls.fedora.FedoraHelper.getSubjects;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -27,13 +32,13 @@ import org.apache.commons.httpclient.methods.multipart.FilePart;
 import org.apache.commons.httpclient.methods.multipart.FilePartSource;
 import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
 import org.apache.commons.httpclient.methods.multipart.Part;
+import org.apache.commons.io.IOUtils;
 
 import com.yourmediashelf.fedora.client.FedoraClient;
 import com.yourmediashelf.fedora.client.FedoraClientException;
 import com.yourmediashelf.fedora.client.FedoraCredentials;
 
 public class PostSolrDocument {
-    
     public static void main(String [] args) throws Exception {
         PostSolrDocument solr = new PostSolrDocument();
         solr.reindexWSLSCollection(false);
@@ -157,11 +162,20 @@ public class PostSolrDocument {
             writeStreamToStream(FedoraClient.getDissemination(pid, servicePid, serviceMethod).execute(fc).getEntityInputStream(), baos);
             FedoraClient.addDatastream(pid, "solrArchive").content(new String(baos.toByteArray(), "UTF-8")).controlGroup("M").versionable(true).mimeType("text/xml").dsLabel("Index Data for Posting to Solr").execute(fc);
         }
+
+        // validate encoding
+        CharsetDecoder d = Charset.forName("UTF-8").newDecoder();
+        d.onMalformedInput(CodingErrorAction.REPORT); // this may not be necessary as it may be the default
+        d.onUnmappableCharacter(CodingErrorAction.REPORT); // this may not be necessary as it may be the default
+        InputStreamReader r = new InputStreamReader(new ByteArrayInputStream(baos.toByteArray()), d);
+        IOUtils.readLines(r);
+        System.out.println("Encoding is valid!");
+
         HttpClient client = new HttpClient();
 
         PostMethod post = new PostMethod(updateUrl);
         Part[] parts = {
-                new FilePart("add.xml", new ByteArrayPartSource("add.xml", baos.toByteArray()))
+                new FilePart("add.xml", new ByteArrayPartSource("add.xml", baos.toByteArray()), "text/xml", "UTF-8")
         };
         post.setRequestEntity(
                 new MultipartRequestEntity(parts, post.getParams())
@@ -200,7 +214,7 @@ public class PostSolrDocument {
 
         PostMethod post = new PostMethod(updateUrl);
         Part[] parts = {
-                new FilePart("add.xml", new FilePartSource("add.xml", f))
+                new FilePart("add.xml", new FilePartSource("add.xml", f), "text/xml", "UTF-8")
         };
         post.setRequestEntity(
                 new MultipartRequestEntity(parts, post.getParams())
