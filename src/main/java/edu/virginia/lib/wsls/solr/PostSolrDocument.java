@@ -2,14 +2,8 @@ package edu.virginia.lib.wsls.solr;
 
 import static edu.virginia.lib.wsls.fedora.FedoraHelper.getSubjects;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
+import java.net.SocketTimeoutException;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
@@ -22,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
+import com.yourmediashelf.fedora.generated.access.DatastreamType;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpException;
 import org.apache.commons.httpclient.HttpStatus;
@@ -63,11 +58,21 @@ public class PostSolrDocument {
         System.out.println("Created Solr Indexer to index content from " + p.getProperty("fedora-url") + " into the SOLR index at " + updateUrl + ".");
     }
 
-    private void regenerateCollectionSummary(String collectionPid) throws IOException, FedoraClientException {
+    private boolean hasCachedHierarchy(String pid) throws FedoraClientException {
+        for (DatastreamType ds : FedoraClient.listDatastreams(pid).execute(fc).getDatastreams()) {
+            if (ds.getDsid().equals("hierarchy-brief-cached")) {
+                return true;
+            }
+        }
+        return false;
+    }
+    private void regenerateHierarchySummary(String pid) throws IOException,
+            FedoraClientException {
         long start = System.currentTimeMillis();
         System.out.println("Regenerating cached hierarchy...");
         try {
-            FedoraClient.purgeDatastream(collectionPid, "hierarchy-brief-cached").execute(fc);
+            FedoraClient.purgeDatastream(pid, "hierarchy-brief-cached")
+                    .execute(fc);
         } catch (FedoraClientException ex) {
             // unable to delete datastream
             System.out.println(ex.getMessage());
@@ -75,9 +80,9 @@ public class PostSolrDocument {
         File temp = File.createTempFile("hierarchy-brief-cached", ".xml");
         temp.deleteOnExit();
         FileOutputStream o = new FileOutputStream(temp);
-        writeStreamToStream(FedoraClient.getDissemination(collectionPid, "uva-lib:hierarchicalMetadataSDef", "getSummary").execute(fc).getEntityInputStream(), o);
+        writeStreamToStream(FedoraClient.getDissemination(pid, "uva-lib:hierarchicalMetadataSDef", "getSummary").execute(fc).getEntityInputStream(), o);
         o.close();
-        FedoraClient.addDatastream(collectionPid, "hierarchy-brief-cached").content(temp).mimeType("text/xml").controlGroup("M").dsLabel("cached result of uva-lib:hierarchicalMetadataSDef/getSummary").execute(fc);
+        FedoraClient.addDatastream(pid, "hierarchy-brief-cached").content(temp).mimeType("text/xml").controlGroup("M").dsLabel("cached result of uva-lib:hierarchicalMetadataSDef/getSummary").execute(fc);
         long end = System.currentTimeMillis();
         System.out.println("Completed in " + (end - start) + "ms.");
     }
@@ -142,6 +147,9 @@ public class PostSolrDocument {
     }
 
     public void indexPid(String pid, FedoraClient fc, boolean regenerate) throws Exception {
+        indexPid(pid, fc, regenerate, false);
+    }
+    public void indexPid(String pid, FedoraClient fc, boolean regenerate, boolean createCache) throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         if (!regenerate) {
             try {
@@ -152,14 +160,31 @@ public class PostSolrDocument {
             }
         }
         if (regenerate) {
-            if (pid.equals("uva-lib:2214294")) {
+            if (createCache || hasCachedHierarchy(pid)) {
                 // because of a timeout issue, we cache the result of a dissemination in the collection object
-                if (regenerate) {
-                    regenerateCollectionSummary(pid);
-                }
+                regenerateHierarchySummary(pid);
             }
 
-            writeStreamToStream(FedoraClient.getDissemination(pid, servicePid, serviceMethod).execute(fc).getEntityInputStream(), baos);
+            try {
+                writeStreamToStream(FedoraClient.getDissemination(pid, servicePid, serviceMethod).execute(fc).getEntityInputStream(), baos);
+            } catch (FedoraClientException ex) {
+                ByteArrayOutputStream trace = new ByteArrayOutputStream();
+                PrintWriter w = new PrintWriter(new OutputStreamWriter(trace));
+                ex.printStackTrace(w);
+                w.close();
+                if (trace.toString("UTF-8").contains("SocketTimeoutException")) {
+                    if (regenerate) {
+                        if (createCache) {
+                            throw ex;
+                        } else {
+                            System.err.println("SocketTimeout for " + pid + ", triggering cached hierarchy generation.");
+                            indexPid(pid, fc, true, true);
+                            return;
+                        }
+                    }
+                }
+                throw ex;
+            }
             FedoraClient.addDatastream(pid, "solrArchive").content(new String(baos.toByteArray(), "UTF-8")).controlGroup("M").versionable(true).mimeType("text/xml").dsLabel("Index Data for Posting to Solr").execute(fc);
         }
 
@@ -169,7 +194,6 @@ public class PostSolrDocument {
         d.onUnmappableCharacter(CodingErrorAction.REPORT); // this may not be necessary as it may be the default
         InputStreamReader r = new InputStreamReader(new ByteArrayInputStream(baos.toByteArray()), d);
         IOUtils.readLines(r);
-        System.out.println("Encoding is valid!");
 
         HttpClient client = new HttpClient();
 

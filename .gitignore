@@ -13,6 +13,9 @@ bin
 \.settings
 \.classpath
 
+# IntelliJ output #
+\.idea
+
 # Emacs output #
 ################
 *~

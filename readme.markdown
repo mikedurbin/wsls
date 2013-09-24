@@ -14,6 +14,11 @@ configured solr index.
 The required configurations are found and explained in the 
 /src/main/resources/conf/ directory.
 
+For each bi-weekly batch ingest:
+1. download the latest cataloging spreadsheet and update ingest.properties to reference it and the old version.
+2. download the master file if it has been updated and update ingest.properties to reference it and the old version
+3. run the production ingester as follows...
+
 	mvn exec:java -Dexec.mainClass=edu.virginia.lib.wsls.fedora.ProductionIngester
 
 ## foxml files
