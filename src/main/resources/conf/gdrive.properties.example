@@ -1,0 +1,19 @@
+# The e-mail address of the service account that has been granted access to
+# the folder in google drive containing the master spreadsheets.
+service-account:
+
+# The path to the pk12 file that represents the keys to authenticate to the
+# google drive api.
+private-key-file:
+
+# The id of the folder (shared with this service account) whose contents are
+# the spreadsheets that make up the master spreadsheet.
+folder-id:
+
+# The id of the spreadsheet (shared with this service account) that contains
+# the values entered into the google form for cataloging.
+cataloging-spreadsheet-id:
+
+# The absolute path of a directory into which the google drive helper may
+# maintain a cache of content from the google drive.
+cache-dir:

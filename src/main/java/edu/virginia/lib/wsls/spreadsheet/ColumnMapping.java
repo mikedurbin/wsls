@@ -51,7 +51,7 @@ public class ColumnMapping {
         }
         return result.get(0);
     }
-    
+
     public List<Integer> getColumnsForLabel(String label) {
         if (!mapping.containsKey(label)) {
             throw new IllegalArgumentException("No column is labeled \"" + label + "\"!");

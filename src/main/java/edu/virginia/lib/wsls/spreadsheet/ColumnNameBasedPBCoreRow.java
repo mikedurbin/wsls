@@ -1,9 +1,12 @@
 package edu.virginia.lib.wsls.spreadsheet;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.poi.ss.usermodel.Row;
+
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
 
@@ -15,8 +18,23 @@ public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
         return getString(m.getColumnForLabel("pbcoreIdentifier source=UVA"), "MISSING ID");
     }
     
-    public String getAssetDate() {
-        return getString(m.getColumnForLabel("pbcoreAssetDate type=Content"));
+    public Date getAssetDate() {
+        String assetDateStr = getString(m.getColumnForLabel("pbcoreAssetDate type=Content"));
+        if (assetDateStr == null) {
+            return null;
+        } else if (assetDateStr.equals("n/a")) {
+            return null;
+        }
+        try {
+            return new SimpleDateFormat("MM/dd/yy").parse(assetDateStr);
+        } catch (ParseException e) {
+            try {
+                return new SimpleDateFormat("MM/dd/yyyy").parse(assetDateStr);
+            } catch (ParseException e1) {
+                System.err.println("Bad dates! \"" + assetDateStr + "\"");
+                return null;
+            }
+        }
     }
     
     public String getTitle() {
@@ -94,4 +112,13 @@ public class ColumnNameBasedPBCoreRow extends PBCoreSpreadsheetRow {
     public String getInstantiationAnnotation() {
         return getString(m.getColumnForLabel("instantiationAnnotation"));
     }
+
+    public int getProcessingCode() {
+        String strVal = getString(m.getColumnForLabel("Processing category code"));
+        if (strVal == null) {
+            return 0;
+        }
+        return Integer.parseInt(strVal);
+    }
+
 }

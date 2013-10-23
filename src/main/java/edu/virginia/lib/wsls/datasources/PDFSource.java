@@ -1,19 +1,19 @@
 package edu.virginia.lib.wsls.datasources;
 
 import java.io.File;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Pattern;
 
 public class PDFSource {
 
     private Map<String, File> idToPDFFileMap = new HashMap<String, File>();
 
-    public PDFSource(File dir) {
+    private File changeDir;
+
+    public PDFSource(File dir, File changedDir) {
         includePDFDirectory(dir);
+        includePDFDirectory(changedDir);
+        changeDir = changedDir;
     }
 
     private void includePDFDirectory(File dir) {
@@ -36,6 +36,21 @@ public class PDFSource {
 
     public boolean isPDFPresent(String id) {
         return idToPDFFileMap.containsKey(id);
+    }
+
+    public boolean hasPDFChanged(String id) {
+        File pdf = getPDFFile(id);
+        return pdf.getParentFile().equals(changeDir);
+    }
+
+    public List<String> getIdsWithChangedPDFs() {
+        List<String> ids = new ArrayList<String>();
+        for (String id : this.getKnownPDFIds()) {
+            if (hasPDFChanged(id)) {
+                ids.add(id);
+            }
+        }
+        return ids;
     }
 
     public File getPDFFile(String id) {

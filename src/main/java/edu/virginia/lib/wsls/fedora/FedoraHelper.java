@@ -223,12 +223,24 @@ public class FedoraHelper {
         */
     }
 
+    public static void setParent(FedoraClient fc, String pid, String parent) throws Exception {
+        // clear any existing
+        for (String uri : getParentObjectURIsFromRelsExt(fc, pid)) {
+            System.out.println("PURGING " + pid + " -isPartOf-> " + uri.substring("info:fedora/".length()));
+            FedoraClient.purgeRelationship(pid).predicate(FEDORA_RELS + "isPartOf").object(uri).execute(fc);
+        }
+        if (parent != null) {
+            System.out.println("ADDING " + pid + " -isPartOf-> " + parent);
+            FedoraClient.addRelationship(pid).predicate(FEDORA_RELS + "isPartOf").object("info:fedora/" + parent).execute(fc);
+        }
+    }
+
     public static void setFollows(FedoraClient fc, String pid, String prev) throws Exception {
         List<String> currentlyFollowing = getPreviousObjectURIsFromRelsExt(fc, pid);
         if (prev == null) {
             // clear any existing 
             for (String uri : currentlyFollowing) {
-                System.out.println("PURGING " + uri.substring(13) + " --> " + pid);
+                System.out.println("PURGING " + uri.substring("info:fedora/".length()) + " --> " + pid);
                 FedoraClient.purgeRelationship(pid).predicate(UVA_RELS + "follows").object(uri).execute(fc);
             }
         } else {
@@ -237,7 +249,7 @@ public class FedoraHelper {
                 if (uri.equals("info:fedora/" + prev)) {
                     hasExistingFollowRelationship = true;
                 } else {
-                    System.out.println("PURGING " + uri.substring(13) + " --> " + pid);
+                    System.out.println("PURGING " + uri.substring("info:fedora/".length()) + " --> " + pid);
                     FedoraClient.purgeRelationship(pid).predicate(UVA_RELS + "follows").object(uri).execute(fc);
                 }
             }
@@ -289,6 +301,53 @@ public class FedoraHelper {
             }});
         
         NodeList nl = ((NodeList) xpath.evaluate("rdf:RDF/rdf:Description/uva:follows", relsExtDoc, XPathConstants.NODESET));
+        for (int i = 0; i < nl.getLength(); i ++) {
+            pids.add((String) xpath.evaluate("@rdf:resource", nl.item(i), XPathConstants.STRING));
+        }
+        return pids;
+    }
+
+    public static List<String> getParentObjectURIsFromRelsExt(FedoraClient fc, String pid) throws Exception {
+        List<String> pids = new ArrayList<String>();
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setNamespaceAware(true);
+        DocumentBuilder builder = f.newDocumentBuilder();
+        Document relsExtDoc = builder.parse(FedoraClient.getDatastreamDissemination(pid, "RELS-EXT").execute(fc).getEntityInputStream());
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        xpath.setNamespaceContext(new NamespaceContext() {
+
+            public String getNamespaceURI(String prefix) {
+                if (prefix.equals("rdf")) {
+                    return "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+                } else if (prefix.equals("rels")) {
+                    return "info:fedora/fedora-system:def/relations-external#";
+                } else {
+                    return null;
+                }
+            }
+
+            public String getPrefix(String uri) {
+                if (uri.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#")) {
+                    return "rdf";
+                } else if (uri.equals("info:fedora/fedora-system:def/relations-external#")) {
+                    return "rels";
+                } else {
+                    return null;
+                }
+            }
+
+            public Iterator getPrefixes(String uri) {
+                if (uri.equals("http://www.w3.org/1999/02/22-rdf-syntax-ns#")) {
+                    return Arrays.asList(new String[] { "rdf" }).iterator();
+                } else if (uri.equals("info:fedora/fedora-system:def/relations-external#")) {
+                    return Arrays.asList(new String[] { "rels" }).iterator();
+
+                } else {
+                    return null;
+                }
+            }});
+
+        NodeList nl = ((NodeList) xpath.evaluate("rdf:RDF/rdf:Description/rels:isPartOf", relsExtDoc, XPathConstants.NODESET));
         for (int i = 0; i < nl.getLength(); i ++) {
             pids.add((String) xpath.evaluate("@rdf:resource", nl.item(i), XPathConstants.STRING));
         }

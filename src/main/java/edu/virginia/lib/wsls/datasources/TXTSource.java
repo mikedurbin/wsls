@@ -1,19 +1,12 @@
 package edu.virginia.lib.wsls.datasources;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.MalformedInputException;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import org.apache.pdfbox.io.IOUtils;
 
@@ -21,9 +14,19 @@ public class TXTSource {
 
 
     private Map<String, File> idToTXTFileMap = new HashMap<String, File>();
-    
-    public TXTSource(File dir) {
+
+    private Set<String> updatedIds = new HashSet<String>();
+
+    public TXTSource(File dir, File updated) throws IOException {
         includeTextDirectory(dir);
+        if (updated != null) {
+            BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(updated)));
+            String line = null;
+            while ((line = r.readLine()) != null) {
+                updatedIds.add(line);
+            }
+            r.close();
+        }
     }
 
     private void includeTextDirectory(File dir) {
@@ -44,6 +47,20 @@ public class TXTSource {
 
     public boolean isTXTPresent(String id) {
         return idToTXTFileMap.containsKey(id);
+    }
+
+    public Collection<String> getUpdatedTXTIds() {
+        List<String> updated = new ArrayList<String>();
+        for (String id : getKnownTXTIds()) {
+            if (isTXTUpdated(id)) {
+                updated.add(id);
+            }
+        }
+        return updated;
+    }
+
+    public boolean isTXTUpdated(String id) {
+        return updatedIds.contains(id);
     }
 
     public File getTXTFile(String id) {

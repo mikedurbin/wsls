@@ -1,17 +1,11 @@
 package edu.virginia.lib.wsls.spreadsheet;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
-import java.text.DecimalFormat;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
+import org.apache.commons.io.output.ByteArrayOutputStream;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 import javax.xml.namespace.NamespaceContext;
 import javax.xml.parsers.DocumentBuilder;
@@ -27,13 +21,12 @@ import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
-
-import org.apache.commons.io.output.ByteArrayOutputStream;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class PBCoreDocument {
 
@@ -77,7 +70,7 @@ public class PBCoreDocument {
         return null;
     }
 
-    public String getAssetDate() {
+    public Date getAssetDate() {
         for (PBCoreSpreadsheetRow r : records) {
             if (r.getAssetDate() != null) {
                 return r.getAssetDate();
@@ -94,10 +87,10 @@ public class PBCoreDocument {
      * @return
      */
     public VariablePrecisionDate getAssetVariablePrecisionDate() {
-        String date = getAssetDate();
-        if (date == null) {
-            return null;
+        if (getAssetDate() == null) {
+            return new VariablePrecisionDate(0, 0, 0);
         } else {
+            String date = new SimpleDateFormat("MM/dd/yyyy").format(getAssetDate());
             String[] mdy = date.split("/");
             if (mdy.length != 3) {
                 throw new IllegalArgumentException("Unrecognized date: \"" + date + "\"");
@@ -219,7 +212,7 @@ public class PBCoreDocument {
         addPBCoreElement(root, "pbcoreAssetType", type);
         
         if (getAssetVariablePrecisionDate() != null) {
-            String date = getAssetDate();
+            String date = new SimpleDateFormat("MM/dd/yy").format(getAssetDate());
             addPBCoreElement(root, "pbcoreAssetDate", date, "content");
         }
         
@@ -363,6 +356,19 @@ public class PBCoreDocument {
         Integer year;
         Integer month;
         Integer day;
+
+        public boolean equals(Object o) {
+            if (o instanceof VariablePrecisionDate) {
+                VariablePrecisionDate d = (VariablePrecisionDate) o;
+                return toString().equals(d.toString());
+            }
+            return false;
+        }
+
+        public int hashCode() {
+            return year + (month*10000) + (day * 1000000);
+        }
+
 
         public VariablePrecisionDate(int y, int m) {
             year = y;

@@ -2,6 +2,7 @@ package edu.virginia.lib.wsls.spreadsheet;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 import org.apache.poi.ss.usermodel.Cell;
@@ -17,7 +18,7 @@ public class GoogleFormSpreadsheetPBCoreRow extends PBCoreSpreadsheetRow {
         return getString(m.getColumnForLabel("File number"), "MISSING ID");
     }
 
-    public String getAssetDate() {
+    public Date getAssetDate() {
         return null;
     }
 
@@ -101,6 +102,10 @@ public class GoogleFormSpreadsheetPBCoreRow extends PBCoreSpreadsheetRow {
 
     public String getInstantiationAnnotation() {
         return null;
+    }
+
+    public int getProcessingCode() {
+        return 0;
     }
 
     /**

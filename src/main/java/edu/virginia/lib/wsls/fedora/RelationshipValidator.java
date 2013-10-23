@@ -25,6 +25,60 @@ public class RelationshipValidator {
         pids = pr;
     }
 
+    public void diagnoseParents() throws Exception {
+        processParents(false);
+    }
+
+    public void fixParents() throws Exception {
+        processParents(true);
+    }
+
+    private void processParents(boolean fix) throws Exception {
+        if (fix) {
+            System.out.println("Fixing parent relationships:\n");
+        } else {
+            System.out.println("Diagnosing parent relationships:\n");
+        }
+        StringBuffer report = new StringBuffer();
+        int i = 0;
+        for (String pid : FedoraHelper.getSubjects(fc, "info:fedora/fedora-system:def/model#hasModel", "uva-lib:pbcore2CModel")) {
+            boolean fail = false;
+            VariablePrecisionDate date = pids.getDateForPid(pid);
+            String expectedParentPid = null;
+            List<String> parents = FedoraHelper.getObjects(fc, pid, "info:fedora/fedora-system:def/relations-external#isPartOf");
+            if (date == null || date.getMonth() == 0) {
+                expectedParentPid = pids.getUnknownPid();
+            } else {
+                expectedParentPid = pids.getMonthPid(date.getYear(), date.getMonth());
+            }
+            if (expectedParentPid == null) {
+                expectedParentPid = pids.getUnknownPid();
+            }
+            if (!parents.contains(expectedParentPid) || parents.size() != 1) {
+                fail = true;
+                if (fix) {
+                    FedoraHelper.setParent(fc, pid, expectedParentPid);
+                } else {
+                    report.append(pid + " should be in " + expectedParentPid + "!\n");
+                    System.out.print("X");
+                    break;
+                }
+            } else {
+                if (!fix) {
+                    System.out.print(".");
+                }
+            }
+
+            if (!fix) {
+                System.out.flush();
+                if (++ i % 80 == 0) {
+                    System.out.println();
+                }
+            }
+        }
+        System.out.println("\n\n" + report.toString());
+    }
+
     public void correctTree(String rootPid) throws Exception {
         //System.out.println(rootPid);
         correctChildSet(rootPid, IS_PART_OF, RelationshipValidator.Child.Precision.YEAR);

@@ -35,6 +35,10 @@ public class FedoraRepository {
         //System.out.println("Lucene Index: ");
         //pids.dumpIndex(System.out);
     }
+
+    public PIDRegistry getPIDRegistry() {
+        return this.pids;
+    }
     
     /**
      * Stores/Updates the video/metadata object in fedora for a WSLS video
@@ -75,16 +79,18 @@ public class FedoraRepository {
         return videoPid;
     }
 
-    public String ingestWSLSAnchorScriptObject(String id, File pdf, File thumbnail, File text) throws Exception {
+    public String ingestWSLSAnchorScriptObject(String id, File pdf, File thumbnail, File text, boolean update) throws Exception {
         // locate the existing object (if present)
         String videoPid = pids.getPIDForWSLSID(id);
         String scriptPid = pids.getAnchorPIDForWSLSID(id);
 
         if (scriptPid != null) {
-            // just return, we're not worried about replacing the PDFs
-            return scriptPid;
-            // purge old relationships
-            //FedoraClient.purgeDatastream(scriptPid, "RELS-EXT").execute(fc);
+            if (!update) {
+                return scriptPid;
+            } else {
+                // purge old relationships
+                FedoraClient.purgeDatastream(scriptPid, "RELS-EXT").execute(fc);
+            }
         }
 
         if (videoPid == null) {
@@ -113,6 +119,13 @@ public class FedoraRepository {
         FedoraClient.addDatastream(scriptPid, "thumbnail").controlGroup("M").mimeType("image/png").dsLabel("Thumbnail image of anchor script").content(thumbnail).execute(fc);
 
         return scriptPid;
+    }
+
+    public void purgeWSLSAnchorScriptObject(String id) throws IOException {
+        String scriptPid = pids.getAnchorPIDForWSLSID(id);
+        if (scriptPid != null) {
+            FedoraClient.purgeObject(scriptPid);
+        }
     }
 
     private String getOrCreateParentInHierarchy(PBCoreDocument pbcore) throws Exception {
@@ -291,8 +304,19 @@ public class FedoraRepository {
 
     }
 
+    public void diagnoseParents() throws Exception {
+        RelationshipValidator validator = new RelationshipValidator(fc, pids);
+        validator.diagnoseParents();
+    }
+
+    public void fixParents() throws Exception {
+        RelationshipValidator validator = new RelationshipValidator(fc, pids);
+        validator.fixParents();
+    }
+
     public void fixRelationships() throws IOException, Exception {
         RelationshipValidator validator = new RelationshipValidator(fc, pids);
+        validator.fixParents();
         validator.correctTree(pids.getWSLSCollectionPid());
     }
 

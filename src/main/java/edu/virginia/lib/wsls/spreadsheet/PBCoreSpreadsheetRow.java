@@ -1,5 +1,7 @@
 package edu.virginia.lib.wsls.spreadsheet;
 
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 import org.apache.poi.ss.usermodel.Cell;
@@ -22,7 +24,7 @@ public abstract class PBCoreSpreadsheetRow {
 
     public abstract String getId();
     
-    public abstract String getAssetDate();
+    public abstract Date getAssetDate();
     
     public abstract String getTitle();
     
@@ -42,25 +44,7 @@ public abstract class PBCoreSpreadsheetRow {
     
     public abstract String getInstantiationAnnotation();
 
-    private int getOrCreateColumnIndex(String label) {
-        try {
-            return getMapping().getColumnForLabel(label);
-        } catch (IllegalArgumentException ex) {
-            return getMapping().addColumn(label);
-        }
-    }
-    public void markAsNotIngested(String status) {
-        int statusColIndex = getOrCreateColumnIndex("ingest status");
-        row.createCell(statusColIndex).setCellValue(status);
-    }
-
-    public void markAsIngested(String pid) {
-        int statusColIndex = getOrCreateColumnIndex("ingest status");
-        row.createCell(statusColIndex).setCellValue("ingested");
-
-        int pidColIndex = getOrCreateColumnIndex("fedora pid");
-        row.createCell(pidColIndex).setCellValue(pid);
-    }
+    public abstract int getProcessingCode();
 
     public ColumnMapping getMapping() {
         return m;
@@ -84,5 +68,60 @@ public abstract class PBCoreSpreadsheetRow {
             return defaultValue;
         }
     }
+
+    /**
+     * Determines if the two rows (with respect to tracked value types) are
+     * equivalent.
+     */
+    public boolean equals(Object o) {
+        if (!(o instanceof PBCoreSpreadsheetRow)) {
+             return false;
+        }
+        PBCoreSpreadsheetRow other = (PBCoreSpreadsheetRow) o;
+        return equals(getId(), other.getId())
+                && equals(getAssetDate(), other.getAssetDate())
+                && equals(getTitle(), other.getTitle())
+                && equals(getAbstract(), other.getAbstract())
+                && equals(getPlaces(), other.getPlaces())
+                && equals(getTopics(), other.getTopics())
+                && equals(getEntitiesLCSH(), other.getEntitiesLCSH())
+                && equals(getInstantiationLocation(), other.getInstantiationLocation())
+                && equals(getInstantiationDuration(), other.getInstantiationDuration())
+                && equals(getInstantiationColors(), other.getInstantiationColors())
+                && equals(getInstantiationAnnotation(), other.getInstantiationAnnotation())
+                && (getProcessingCode() == other.getProcessingCode());
+    }
+
+    public int hashCode() {
+        return getId().hashCode() + getAssetDate().hashCode() + getTitle().hashCode() + getAbstract().hashCode() + getPlaces().hashCode() + getTopics().hashCode() + getEntitiesLCSH().hashCode() + getInstantiationAnnotation().hashCode() + getInstantiationColors().hashCode() + getInstantiationDuration().hashCode() + getInstantiationAnnotation().hashCode() + getProcessingCode();
+    }
+
+
+    public boolean equals(Object one, Object two) {
+        one = emptyToNull(one);
+        two = emptyToNull(two);
+        if (one == null && two == null) {
+            return true;
+        } else if (one == null || two == null) {
+            return false;
+        } else {
+            return one.equals(two);
+        }
+    }
+
+    private Object emptyToNull(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof String && ((String) o).trim().length() == 0) {
+            return null;
+        }
+        if (o instanceof Collection && ((Collection) o).isEmpty()) {
+            return null;
+        }
+        return o;
+    }
+
+
 
 }
